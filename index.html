@@ -697,9 +697,9 @@
         <button type="button" class="btn" id="kp-manage-alfano">Nahrát Alfano ZIP</button>
       </div>
       <div class="kp-alfano-metrics">
-        <div class="kp-alfano-stat"><span>Nejlepší kolo</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord víkendu</small></div>
+        <div class="kp-alfano-stat"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></div>
         <div class="kp-alfano-stat"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></div>
-        <div class="kp-alfano-stat"><span>Max. rychlost</span><strong id="kp-alfano-speed">—</strong><small>km/h</small></div>
+        <div class="kp-alfano-stat"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></div>
         <div class="kp-alfano-stat"><span>Celkem kol</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">0 tréninků</small></div>
       </div>
       <div class="kp-alfano-chart-wrap">
@@ -859,6 +859,7 @@
       var pdfCheckCompleted = false;
       var fflateLibraryPromise = null;
       var alfanoSessions = [];
+      var alfanoTrackRecords = {};
 
       function loadSetting(key) {
         try { return localStorage.getItem(key); } catch (error) { return null; }
@@ -905,7 +906,8 @@
         alfanoBestNote: root.querySelector("#kp-alfano-best-note"),
         alfanoLatest: root.querySelector("#kp-alfano-latest"),
         alfanoLatestNote: root.querySelector("#kp-alfano-latest-note"),
-        alfanoSpeed: root.querySelector("#kp-alfano-speed"),
+        alfanoConsistency: root.querySelector("#kp-alfano-consistency"),
+        alfanoConsistencyNote: root.querySelector("#kp-alfano-consistency-note"),
         alfanoLaps: root.querySelector("#kp-alfano-laps"),
         alfanoLapsNote: root.querySelector("#kp-alfano-laps-note"),
         alfanoChart: root.querySelector("#kp-alfano-chart"),
@@ -1403,6 +1405,55 @@
         saveSetting("karting-alfano-sessions", JSON.stringify(alfanoSessions));
       }
 
+      function trackRecordKey(track) {
+        return String(track || "Trať").trim().toLocaleUpperCase("cs-CZ");
+      }
+
+      function restoreAlfanoTrackRecords() {
+        var saved = loadSetting("karting-alfano-track-records");
+        if (!saved) return;
+        try {
+          var parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) alfanoTrackRecords = parsed;
+        } catch (error) { /* Poškozenou uloženou kopii ignorujeme. */ }
+      }
+
+      function saveAlfanoTrackRecords() {
+        saveSetting("karting-alfano-track-records", JSON.stringify(alfanoTrackRecords));
+      }
+
+      function updateAlfanoTrackRecords(sessions) {
+        var changed = false;
+        sessions.filter(alfanoSessionIsValid).forEach(function (session) {
+          var key = trackRecordKey(session.track);
+          var record = alfanoTrackRecords[key];
+          if (!record || !Number.isFinite(record.bestMs) || session.bestMs < record.bestMs) {
+            alfanoTrackRecords[key] = {
+              track: session.track || "Trať",
+              bestMs: session.bestMs,
+              bestLap: session.bestLap,
+              date: session.date || "",
+              time: session.time || "",
+              fileName: session.fileName
+            };
+            changed = true;
+          }
+        });
+        if (changed) saveAlfanoTrackRecords();
+      }
+
+      function calculateConsistency(session) {
+        var cleanLaps = session.laps.filter(function (lap) {
+          return Number.isFinite(lap.ms) && lap.ms >= session.bestMs && lap.ms <= session.bestMs + 5000;
+        });
+        var consistentLaps = cleanLaps.filter(function (lap) { return lap.ms <= session.bestMs + 500; });
+        return {
+          count: consistentLaps.length,
+          total: cleanLaps.length,
+          percent: cleanLaps.length ? Math.round(consistentLaps.length / cleanLaps.length * 100) : 0
+        };
+      }
+
       function parseAlfanoTimestamp(dateText, timeText) {
         var dateParts = String(dateText || "").split("-").map(Number);
         var timeParts = String(timeText || "").replace("H", ":").split(":").map(Number);
@@ -1541,28 +1592,29 @@
           elements.alfanoSummary.textContent = "Zatím nejsou nahraná žádná data";
           elements.alfanoBest.textContent = "—";
           elements.alfanoLatest.textContent = "—";
-          elements.alfanoSpeed.textContent = "—";
+          elements.alfanoConsistency.textContent = "—";
           elements.alfanoLaps.textContent = "—";
-          elements.alfanoBestNote.textContent = "rekord víkendu";
+          elements.alfanoBestNote.textContent = "rekord tratě";
           elements.alfanoLatestNote.textContent = "zatím bez dat";
+          elements.alfanoConsistencyNote.textContent = "kola do +0,5 s";
           elements.alfanoLapsNote.textContent = "0 tréninků";
           renderAlfanoChart([]);
           return;
         }
 
         var latest = sorted[sorted.length - 1];
-        var best = sorted.reduce(function (winner, session) { return session.bestMs < winner.bestMs ? session : winner; }, sorted[0]);
         var totalLaps = sorted.reduce(function (total, session) { return total + session.laps.length; }, 0);
-        var maxSpeed = Math.max.apply(null, sorted.map(function (session) { return session.maxSpeed; }));
-        var bestIndex = sorted.indexOf(best) + 1;
-        var latestDelta = latest.bestMs - best.bestMs;
+        var record = alfanoTrackRecords[trackRecordKey(latest.track)] || { bestMs: latest.bestMs, bestLap: latest.bestLap, track: latest.track };
+        var latestDelta = latest.bestMs - record.bestMs;
+        var consistency = calculateConsistency(latest);
 
         elements.alfanoSummary.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků") + " · " + latest.track + " · poslední " + latest.time;
-        elements.alfanoBest.textContent = formatLapTime(best.bestMs);
-        elements.alfanoBestNote.textContent = "trénink " + bestIndex + " · kolo " + best.bestLap;
+        elements.alfanoBest.textContent = formatLapTime(record.bestMs);
+        elements.alfanoBestNote.textContent = (record.track || latest.track) + (record.bestLap ? " · kolo " + record.bestLap : "");
         elements.alfanoLatest.textContent = formatLapTime(latest.bestMs);
-        elements.alfanoLatestNote.textContent = latestDelta === 0 ? "NOVÝ REKORD" : "+" + formatLapTime(latestDelta) + " s";
-        elements.alfanoSpeed.textContent = maxSpeed.toFixed(1).replace(".", ",");
+        elements.alfanoLatestNote.textContent = latestDelta === 0 ? "OSOBNÍ REKORD" : "+" + formatLapTime(latestDelta) + " s k rekordu";
+        elements.alfanoConsistency.textContent = consistency.total >= 3 ? consistency.percent + " %" : "—";
+        elements.alfanoConsistencyNote.textContent = consistency.total >= 3 ? consistency.count + " z " + consistency.total + " kol do +0,5 s" : "málo měřených kol";
         elements.alfanoLaps.textContent = String(totalLaps);
         elements.alfanoLapsNote.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků");
         renderAlfanoChart(sorted);
@@ -1587,6 +1639,7 @@
           imported.forEach(function (session) { byFileName.set(session.fileName, session); });
           alfanoSessions = Array.from(byFileName.values());
           saveAlfanoSessions();
+          updateAlfanoTrackRecords(imported);
           renderAlfano();
           elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink." : " tréninky.");
           elements.alfanoFiles.value = "";
@@ -1900,6 +1953,8 @@
       }
       restoreCachedSchedules();
       restoreAlfanoSessions();
+      restoreAlfanoTrackRecords();
+      updateAlfanoTrackRecords(alfanoSessions);
       renderPdfStatus(false);
       renderAlfano();
       setDay(state.day);
