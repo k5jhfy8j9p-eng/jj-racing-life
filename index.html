@@ -2283,7 +2283,7 @@
             changed = true;
           }
         });
-        sessions.forEach(function (session) { delete session.gpsLaps; });
+        // Zmenšené GPS body ponecháváme u tréninku pro Datové centrum.
         if (changed) saveAlfanoSectorProfiles();
       }
 
