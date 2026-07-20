@@ -309,6 +309,17 @@
       letter-spacing: -.035em;
     }
 
+    #karting-program-app .kp-countdown.is-pause {
+      font-size: clamp(2.35rem, 4.25vw, 4.9rem);
+      letter-spacing: -.02em;
+      white-space: nowrap;
+    }
+
+    #karting-program-app .kp-category.is-pause {
+      font-size: clamp(1.45rem, 2.45vw, 2.7rem);
+      line-height: 1.04;
+    }
+
     #karting-program-app .kp-countdown-label {
       color: var(--muted-foreground);
       margin-bottom: 4px;
@@ -2074,11 +2085,14 @@
         var situation = getSituation(now, sessions);
         var current = situation.current;
         var next = situation.next;
+        var compactPause = Boolean((current && current.type === "Pauza") || (!current && next));
 
         elements.clock.textContent = formatClock(now, true);
         elements.delayLabel.textContent = (state.delay > 0 ? "+" : "") + state.delay + " min";
         elements.statusBadge.textContent = state.delay === 0 ? "Podle plánu" : "Posun " + (state.delay > 0 ? "+" : "") + state.delay + " min";
         elements.prepMinutes.value = String(state.prep);
+        elements.currentCategory.classList.toggle("is-pause", compactPause);
+        elements.currentCount.classList.toggle("is-pause", compactPause);
 
         if (current) {
           var remaining = (current.end - now) * 60;
