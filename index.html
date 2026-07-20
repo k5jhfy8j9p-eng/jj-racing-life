@@ -542,7 +542,8 @@
     #karting-program-app .kp-map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; color: var(--muted-foreground); }
     #karting-program-app .kp-map-legend span::before { content: ""; display: inline-block; width: 22px; height: 4px; margin-right: 7px; vertical-align: middle; border-radius: 4px; background: var(--viz-series-2); }
     #karting-program-app .kp-map-legend .is-ideal::before { background: var(--primary); }
-    #karting-program-app .kp-map-legend .is-corridor::before { height: 10px; background: rgba(255, 255, 255, .24); }
+    #karting-program-app .kp-map-source { margin-left: auto; color: var(--muted-foreground); }
+    #karting-program-app .kp-map-source a { color: inherit; }
     #karting-program-app .kp-map-details { color: var(--muted-foreground); }
     #karting-program-app #kp-ideal-map-dialog { width: min(1180px, calc(100% - 24px)); max-height: calc(100dvh - 24px); }
     #karting-program-app #kp-ideal-map-dialog .kp-dialog-body { min-height: min(860px, calc(100dvh - 28px)); grid-template-rows: auto auto minmax(480px, 1fr) auto; }
@@ -808,7 +809,7 @@
         </div>
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
-      <div class="kp-map-legend"><span class="is-corridor">Koridor ze skutečných kol</span><span>Nejlepší celé kolo</span><span class="is-ideal">Ideální složená stopa</span></div>
+      <div class="kp-map-legend"><span>Nejlepší celé kolo</span><span class="is-ideal">Ideální složená stopa</span><small class="kp-map-source">Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
       <div class="kp-chart-empty" id="kp-ideal-map-empty">Pro zobrazení stopy nahraj Alfano ZIPy znovu.</div>
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
       <div class="kp-map-details" id="kp-ideal-map-details"></div>
@@ -1837,40 +1838,61 @@
         elements.idealMap.removeAttribute("hidden");
         elements.idealMapEmpty.setAttribute("hidden", "");
         elements.idealMapCopy.textContent = profile.track + " · ideální " + formatLapTime(profile.theoreticalMs) + " s · nejlepší celé kolo " + formatLapTime(profile.bestLapMs) + " s";
-        var corridorPaths = Array.isArray(profile.trackReferencePaths) ? profile.trackReferencePaths : [];
-        var allPaths = corridorPaths.concat([profile.bestLapPath]).concat(profile.bestSectorPaths);
-        var allPoints = allPaths.flat();
-        var centerLat = allPoints.reduce(function (sum, point) { return sum + point[0]; }, 0) / allPoints.length;
-        var scaleX = Math.cos(centerLat * Math.PI / 180);
-        var metric = allPoints.map(function (point) { return [point[1] * scaleX, point[0]]; });
-        var minX = Math.min.apply(null, metric.map(function (point) { return point[0]; }));
-        var maxX = Math.max.apply(null, metric.map(function (point) { return point[0]; }));
-        var minY = Math.min.apply(null, metric.map(function (point) { return point[1]; }));
-        var maxY = Math.max.apply(null, metric.map(function (point) { return point[1]; }));
-        var width = 760, height = 420, padding = 34;
-        var factor = Math.min((width - padding * 2) / Math.max(0.000001, maxX - minX), (height - padding * 2) / Math.max(0.000001, maxY - minY));
+        function alignPath(path, anchors) {
+          var shift = anchors.reduce(function (sum, anchor) {
+            var actual = anchor.atEnd ? path[path.length - 1] : path[0];
+            sum[0] += anchor.point[0] - actual[0];
+            sum[1] += anchor.point[1] - actual[1];
+            return sum;
+          }, [0, 0]);
+          shift[0] /= anchors.length;
+          shift[1] /= anchors.length;
+          return path.map(function (point) { return [point[0] + shift[0], point[1] + shift[1]]; });
+        }
+        var idealPaths = [
+          alignPath(profile.bestSectorPaths[0], [{ point: profile.gates[0], atEnd: true }]),
+          alignPath(profile.bestSectorPaths[1], [{ point: profile.gates[0], atEnd: false }, { point: profile.gates[1], atEnd: true }]),
+          alignPath(profile.bestSectorPaths[2], [{ point: profile.gates[1], atEnd: false }])
+        ];
+        var backgrounds = {
+          HRADISTE: { src: "hradiste-ortofoto.jpg", minLon: 14.1118, minLat: 49.3008, maxLon: 14.1182, maxLat: 49.3060 }
+        };
+        var background = backgrounds[trackRecordKey(profile.track)];
+        var allPoints = [profile.bestLapPath].concat(idealPaths).flat();
+        var width = 1100, height = 888, padding = background ? 0 : 28;
+        elements.idealMap.setAttribute("viewBox", "0 0 " + width + " " + height);
+        var minLon = background ? background.minLon : Math.min.apply(null, allPoints.map(function (point) { return point[1]; }));
+        var maxLon = background ? background.maxLon : Math.max.apply(null, allPoints.map(function (point) { return point[1]; }));
+        var minLat = background ? background.minLat : Math.min.apply(null, allPoints.map(function (point) { return point[0]; }));
+        var maxLat = background ? background.maxLat : Math.max.apply(null, allPoints.map(function (point) { return point[0]; }));
+        function svgPosition(point) {
+          return [
+            padding + (point[1] - minLon) / Math.max(.000001, maxLon - minLon) * (width - padding * 2),
+            padding + (maxLat - point[0]) / Math.max(.000001, maxLat - minLat) * (height - padding * 2)
+          ];
+        }
         function svgPoints(path) {
           return path.map(function (point) {
-            var x = padding + (point[1] * scaleX - minX) * factor;
-            var y = height - padding - (point[0] - minY) * factor;
-            return x.toFixed(1) + "," + y.toFixed(1);
+            var position = svgPosition(point);
+            return position[0].toFixed(1) + "," + position[1].toFixed(1);
           }).join(" ");
         }
-        corridorPaths.forEach(function (path) {
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(255,255,255,.13)", "stroke-width": "14", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-        });
+        if (background) {
+          elements.idealMap.appendChild(createSvgElement("image", { href: background.src, x: "0", y: "0", width: width, height: height, preserveAspectRatio: "none" }));
+        }
+        elements.idealMap.appendChild(createSvgElement("rect", { x: "0", y: "0", width: width, height: height, fill: background ? "rgba(3,8,13,.14)" : "rgba(3,8,13,.24)" }));
         elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "6", "stroke-dasharray": "12 8", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-        profile.bestSectorPaths.forEach(function (path) {
+        idealPaths.forEach(function (path) {
           elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.72)", "stroke-width": "12", "stroke-linecap": "round", "stroke-linejoin": "round" }));
           elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "7", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         });
-        profile.bestSectorPaths.slice(0, 2).forEach(function (path, index) {
+        idealPaths.slice(0, 2).forEach(function (path, index) {
           var lastPoint = path[path.length - 1];
           var xy = svgPoints([lastPoint]).split(",");
           elements.idealMap.appendChild(createSvgElement("circle", { cx: xy[0], cy: xy[1], r: "8", fill: "var(--background)", stroke: "var(--primary)", "stroke-width": "4" }));
           elements.idealMap.appendChild(createSvgElement("text", { x: Number(xy[0]) + 12, y: Number(xy[1]) - 10, fill: "white", "font-size": "14", "font-weight": "800" }, "S" + (index + 1)));
         });
-        elements.idealMapDetails.textContent = profile.bestSectorSources.map(function (source, index) {
+        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK   |   " : "Pro tuto trať zatím není uložený letecký podklad.   |   ") + profile.bestSectorSources.map(function (source, index) {
           return "S" + (index + 1) + ": " + formatLapTime(source.ms) + " s · trénink " + source.session + " · kolo " + source.lap;
         }).join("   |   ");
       }
