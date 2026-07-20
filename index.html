@@ -563,6 +563,23 @@
     #karting-program-app .kp-report-verdict { padding: 13px 15px; border-left: 4px solid var(--primary); border-radius: 9px; background: color-mix(in srgb, var(--primary) 8%, var(--muted)); font-weight: 650; }
     #karting-program-app .kp-track-list { display: grid; gap: 8px; }
     #karting-program-app .kp-track-row { display: grid; grid-template-columns: minmax(110px, 1fr) 90px 2fr; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px; background: var(--muted); }
+    #karting-program-app #kp-data-center-dialog { width: min(1480px, calc(100% - 18px)); height: calc(100dvh - 18px); max-height: none; }
+    #karting-program-app #kp-data-center-dialog .kp-dialog-body { height: 100%; grid-template-rows: auto auto minmax(0, 1fr); }
+    #karting-program-app .kp-data-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+    #karting-program-app .kp-data-tabs { display: flex; flex-wrap: wrap; gap: 7px; }
+    #karting-program-app .kp-data-tab[aria-selected="true"] { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+    #karting-program-app .kp-data-panel { min-height: 0; overflow: auto; }
+    #karting-program-app .kp-data-panel[hidden] { display: none; }
+    #karting-program-app .kp-data-layout { display: grid; grid-template-columns: minmax(230px, .72fr) minmax(480px, 2fr); gap: 14px; min-height: 100%; }
+    #karting-program-app .kp-data-sidebar { display: grid; align-content: start; gap: 8px; min-height: 0; overflow: auto; }
+    #karting-program-app .kp-data-main { display: grid; align-content: start; gap: 12px; min-width: 0; }
+    #karting-program-app .kp-data-lap { display: grid; grid-template-columns: 54px 1fr auto; gap: 8px; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; background: var(--muted); color: inherit; text-align: left; cursor: pointer; }
+    #karting-program-app .kp-data-lap.is-active { border-color: var(--primary); }
+    #karting-program-app .kp-telemetry-map { width: 100%; min-height: 390px; border: 1px solid var(--border); border-radius: 12px; background: #0a1018; }
+    #karting-program-app .kp-telemetry-chart { width: 100%; min-height: 210px; border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,.18); }
+    #karting-program-app .kp-data-note { padding: 11px 13px; border-radius: 9px; background: var(--muted); color: var(--muted-foreground); }
+    #karting-program-app .kp-corner-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; }
+    @media (max-width: 850px) { #karting-program-app .kp-data-layout { grid-template-columns: 1fr; } #karting-program-app .kp-corner-grid { grid-template-columns: 1fr 1fr; } }
     #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(120px, 1fr); gap: 6px; }
     #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 120px; overflow: visible; color: var(--foreground); }
     #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 120px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
@@ -738,7 +755,7 @@
           <span class="kp-eyebrow">ALFANO · VÝKON VÍKENDU</span>
           <span class="kp-subtle" id="kp-alfano-summary">Zatím nejsou nahraná žádná data</span>
         </div>
-        <button type="button" class="btn" id="kp-manage-alfano">Nahrát Alfano ZIP</button>
+        <div class="kp-dialog-actions"><button type="button" class="btn btn-primary" id="kp-open-data-center">Datové centrum</button><button type="button" class="btn" id="kp-manage-alfano">Nahrát Alfano ZIP</button></div>
       </div>
       <div class="kp-alfano-metrics">
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-records" title="Zobrazit síň rekordů"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></button>
@@ -872,6 +889,30 @@
       </div>
       <div class="kp-record-grid" id="kp-mileage-grid"></div>
       <div class="kp-track-list" id="kp-track-list"></div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-data-center-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div><h2>Datové centrum</h2><p class="kp-dialog-copy" id="kp-data-center-copy">Detailní analýza Alfano telemetrie.</p></div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div class="kp-data-toolbar">
+        <div class="kp-data-tabs" role="tablist">
+          <button class="btn kp-data-tab" data-panel="overview" aria-selected="true">Přehled</button>
+          <button class="btn kp-data-tab" data-panel="laps" aria-selected="false">Kola</button>
+          <button class="btn kp-data-tab" data-panel="compare" aria-selected="false">Porovnání</button>
+          <button class="btn kp-data-tab" data-panel="track" aria-selected="false">Trať a zatáčky</button>
+          <button class="btn kp-data-tab" data-panel="engine" aria-selected="false">Motor</button>
+        </div>
+        <label class="form-label">Trénink <select class="form-control" id="kp-data-session"></select></label>
+      </div>
+      <section class="kp-data-panel" data-data-panel="overview"><div class="kp-record-grid" id="kp-data-overview"></div><div class="kp-report-verdict" id="kp-data-advice"></div></section>
+      <section class="kp-data-panel" data-data-panel="laps" hidden><div class="kp-data-layout"><div class="kp-data-sidebar" id="kp-data-laps"></div><div class="kp-data-main"><div class="kp-record-grid" id="kp-lap-detail-stats"></div><svg class="kp-telemetry-map" id="kp-lap-map" viewBox="0 0 900 500"></svg><svg class="kp-telemetry-chart" id="kp-lap-chart" viewBox="0 0 900 250"></svg><div class="kp-data-note" id="kp-lap-note"></div></div></div></section>
+      <section class="kp-data-panel" data-data-panel="compare" hidden><div class="kp-data-main"><div class="kp-data-toolbar"><label class="form-label">Kolo A <select class="form-control" id="kp-compare-a"></select></label><label class="form-label">Kolo B <select class="form-control" id="kp-compare-b"></select></label></div><div class="kp-record-grid" id="kp-compare-stats"></div><svg class="kp-telemetry-map" id="kp-compare-map" viewBox="0 0 900 500"></svg><svg class="kp-telemetry-chart" id="kp-compare-chart" viewBox="0 0 900 250"></svg></div></section>
+      <section class="kp-data-panel" data-data-panel="track" hidden><div class="kp-data-main"><svg class="kp-telemetry-map" id="kp-corner-map" viewBox="0 0 900 500"></svg><div class="kp-corner-grid" id="kp-corner-grid"></div><div class="kp-data-note">Zatáčky jsou automaticky rozpoznané podle místních minim rychlosti a změny směru.</div></div></section>
+      <section class="kp-data-panel" data-data-panel="engine" hidden><div class="kp-record-grid" id="kp-engine-stats"></div><svg class="kp-telemetry-chart" id="kp-engine-chart" viewBox="0 0 900 300"></svg><div class="kp-data-note" id="kp-engine-note"></div></section>
     </div>
   </dialog>
 
@@ -1013,6 +1054,29 @@
         dataBadge: root.querySelector("#kp-data-badge"),
         pdfConfirmation: root.querySelector("#kp-pdf-confirmation"),
         manageAlfano: root.querySelector("#kp-manage-alfano"),
+        openDataCenter: root.querySelector("#kp-open-data-center"),
+        dataCenterDialog: root.querySelector("#kp-data-center-dialog"),
+        dataCenterCopy: root.querySelector("#kp-data-center-copy"),
+        dataTabs: root.querySelectorAll(".kp-data-tab"),
+        dataPanels: root.querySelectorAll("[data-data-panel]"),
+        dataSession: root.querySelector("#kp-data-session"),
+        dataOverview: root.querySelector("#kp-data-overview"),
+        dataAdvice: root.querySelector("#kp-data-advice"),
+        dataLaps: root.querySelector("#kp-data-laps"),
+        lapDetailStats: root.querySelector("#kp-lap-detail-stats"),
+        lapMap: root.querySelector("#kp-lap-map"),
+        lapChart: root.querySelector("#kp-lap-chart"),
+        lapNote: root.querySelector("#kp-lap-note"),
+        compareA: root.querySelector("#kp-compare-a"),
+        compareB: root.querySelector("#kp-compare-b"),
+        compareStats: root.querySelector("#kp-compare-stats"),
+        compareMap: root.querySelector("#kp-compare-map"),
+        compareChart: root.querySelector("#kp-compare-chart"),
+        cornerMap: root.querySelector("#kp-corner-map"),
+        cornerGrid: root.querySelector("#kp-corner-grid"),
+        engineStats: root.querySelector("#kp-engine-stats"),
+        engineChart: root.querySelector("#kp-engine-chart"),
+        engineNote: root.querySelector("#kp-engine-note"),
         alfanoDialog: root.querySelector("#kp-alfano-dialog"),
         alfanoFiles: root.querySelector("#kp-alfano-files"),
         importAlfano: root.querySelector("#kp-import-alfano"),
@@ -1837,6 +1901,204 @@
         });
       }
 
+      function dataSessions() {
+        return alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+      }
+
+      function selectedDataSession() {
+        var sessions = dataSessions();
+        return sessions[Number(elements.dataSession.value)] || sessions[sessions.length - 1];
+      }
+
+      function gpsLapFor(session, lapNumber) {
+        return (session.gpsLaps || []).find(function (lap) { return lap.lap === Number(lapNumber); });
+      }
+
+      function hasTelemetry(gpsLap) {
+        return gpsLap && gpsLap.points && gpsLap.points.some(function (point) { return Number.isFinite(point[2]) && Number.isFinite(point[3]); });
+      }
+
+      function telemetryBounds(paths, track) {
+        if (trackRecordKey(track) === "HRADISTE") return { minLon: 14.1118, minLat: 49.3008, maxLon: 14.1182, maxLat: 49.3060, image: "hradiste-ortofoto.jpg" };
+        var points = paths.flat();
+        var lats = points.map(function (point) { return point[0]; });
+        var lons = points.map(function (point) { return point[1]; });
+        var padLat = (Math.max.apply(null, lats) - Math.min.apply(null, lats)) * .12 || .0002;
+        var padLon = (Math.max.apply(null, lons) - Math.min.apply(null, lons)) * .12 || .0002;
+        return { minLon: Math.min.apply(null, lons) - padLon, maxLon: Math.max.apply(null, lons) + padLon, minLat: Math.min.apply(null, lats) - padLat, maxLat: Math.max.apply(null, lats) + padLat };
+      }
+
+      function drawTelemetryMap(svg, paths, track, mode, labels) {
+        svg.innerHTML = "";
+        var usable = paths.filter(function (path) { return path && path.length; });
+        if (!usable.length) return;
+        var width = 900, height = 500;
+        var bounds = telemetryBounds(usable, track);
+        function xy(point) { return [(point[1] - bounds.minLon) / (bounds.maxLon - bounds.minLon) * width, (bounds.maxLat - point[0]) / (bounds.maxLat - bounds.minLat) * height]; }
+        if (bounds.image) svg.appendChild(createSvgElement("image", { href: bounds.image, x: 0, y: 0, width: width, height: height, preserveAspectRatio: "none" }));
+        svg.appendChild(createSvgElement("rect", { x: 0, y: 0, width: width, height: height, fill: bounds.image ? "rgba(0,0,0,.10)" : "rgba(4,10,16,.72)" }));
+        if (mode === "speed" && hasTelemetry({ points: usable[0] })) {
+          var speeds = usable[0].map(function (point) { return point[2]; }).filter(Number.isFinite);
+          var minSpeed = Math.min.apply(null, speeds), maxSpeed = Math.max.apply(null, speeds), speedRange = Math.max(1, maxSpeed - minSpeed);
+          usable[0].forEach(function (point, index, path) {
+            if (!index || !Number.isFinite(point[2])) return;
+            var a = xy(path[index - 1]), b = xy(point), ratio = (point[2] - minSpeed) / speedRange;
+            var hue = 5 + ratio * 115;
+            svg.appendChild(createSvgElement("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: "hsl(" + hue + " 92% 54%)", "stroke-width": "4", "stroke-linecap": "round" }));
+          });
+        } else {
+          var colors = ["var(--primary)", "var(--viz-series-2)", "#ff4b55"];
+          usable.forEach(function (path, index) {
+            svg.appendChild(createSvgElement("polyline", { points: path.map(function (point) { var p = xy(point); return p[0] + "," + p[1]; }).join(" "), fill: "none", stroke: colors[index % colors.length], "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          });
+        }
+        (labels || []).forEach(function (label) {
+          var p = xy(label.point);
+          svg.appendChild(createSvgElement("circle", { cx: p[0], cy: p[1], r: "12", fill: "var(--background)", stroke: "var(--primary)", "stroke-width": "3" }));
+          svg.appendChild(createSvgElement("text", { x: p[0], y: p[1] + 5, "text-anchor": "middle", fill: "white", "font-size": "12", "font-weight": "800" }, label.text));
+        });
+      }
+
+      function drawTelemetryChart(svg, gpsLaps, fields) {
+        svg.innerHTML = "";
+        var laps = gpsLaps.filter(hasTelemetry);
+        if (!laps.length) return;
+        var width = 900, height = Number(svg.getAttribute("viewBox").split(" ")[3]) || 250, left = 45, right = 18, top = 22, bottom = 30;
+        fields.forEach(function (field, fieldIndex) {
+          laps.forEach(function (lap, lapIndex) {
+            var values = lap.points.map(function (point) { return point[field.index]; }).filter(Number.isFinite);
+            if (!values.length) return;
+            var min = field.min !== undefined ? field.min : Math.min.apply(null, values);
+            var max = field.max !== undefined ? field.max : Math.max.apply(null, values);
+            var range = Math.max(1, max - min);
+            var points = lap.points.map(function (point, index) {
+              var value = point[field.index];
+              return Number.isFinite(value) ? [left + index / Math.max(1, lap.points.length - 1) * (width - left - right), top + (max - value) / range * (height - top - bottom)] : null;
+            }).filter(Boolean);
+            svg.appendChild(createSvgElement("polyline", { points: points.map(function (point) { return point[0] + "," + point[1]; }).join(" "), fill: "none", stroke: (field.colors || ["var(--primary)", "var(--viz-series-2)"])[lapIndex % 2], "stroke-width": fieldIndex ? "1.5" : "2.5", opacity: fieldIndex ? ".55" : "1" }));
+          });
+        });
+        svg.appendChild(createSvgElement("text", { x: left, y: height - 9, fill: "var(--muted-foreground)", "font-size": "12" }, "start"));
+        svg.appendChild(createSvgElement("text", { x: width - right, y: height - 9, "text-anchor": "end", fill: "var(--muted-foreground)", "font-size": "12" }, "cíl"));
+      }
+
+      function renderDataOverview(session) {
+        elements.dataOverview.innerHTML = "";
+        var valid = session.laps.filter(function (lap) { return lap.ms <= session.bestMs + 5000; });
+        var consistency = calculateConsistency(session);
+        var fastestThree = valid.slice().sort(function (a, b) { return a.ms - b.ms; }).slice(0, 3);
+        appendRecordItem(elements.dataOverview, "Nejlepší kolo", formatLapTime(session.bestMs) + " s", "kolo " + session.bestLap);
+        appendRecordItem(elements.dataOverview, "Průměr platných kol", formatLapTime(averageMs(valid)) + " s", valid.length + " kol");
+        appendRecordItem(elements.dataOverview, "Konzistence", consistency.percent + " %", consistency.count + " z " + consistency.total + " kol do +0,5 s");
+        appendRecordItem(elements.dataOverview, "Tři nejrychlejší", fastestThree.map(function (lap) { return formatLapTime(lap.ms); }).join(" · "), "kola " + fastestThree.map(function (lap) { return lap.lap; }).join(", "));
+        appendRecordItem(elements.dataOverview, "Maximální rychlost", Number(session.maxSpeed || 0).toFixed(1).replace(".", ",") + " km/h", "souhrn tréninku");
+        appendRecordItem(elements.dataOverview, "Maximální otáčky", Math.round(session.maxRpm || 0) + " rpm", "souhrn tréninku");
+        var half = Math.ceil(valid.length / 2), change = averageMs(valid.slice(half)) - averageMs(valid.slice(0, half));
+        elements.dataAdvice.textContent = !Number.isFinite(change) ? "Pro automatické hodnocení je potřeba více kol." : change < -100 ? "Doporučení: závěr byl o " + formatLapTime(Math.abs(change)) + " s rychlejší. Navazuj na rytmus z posledních kol." : change > 100 ? "Doporučení: tempo v závěru pokleslo o " + formatLapTime(change) + " s. Zaměř se na stabilitu a výjezdy." : "Velmi vyrovnané tempo. Další prostor hledej v zatáčkách s největším propadem rychlosti.";
+      }
+
+      function renderLapDetail(session, lapNumber) {
+        var lap = session.laps.find(function (item) { return item.lap === Number(lapNumber); });
+        var gpsLap = gpsLapFor(session, lapNumber);
+        if (!lap) return;
+        elements.lapDetailStats.innerHTML = "";
+        appendRecordItem(elements.lapDetailStats, "Čas kola", formatLapTime(lap.ms) + " s", (lap.ms === session.bestMs ? "NEJLEPŠÍ KOLO" : "+" + formatLapTime(lap.ms - session.bestMs) + " s"));
+        appendRecordItem(elements.lapDetailStats, "Rychlost", Number(lap.minSpeed || 0).toFixed(1).replace(".", ",") + "–" + Number(lap.maxSpeed || 0).toFixed(1).replace(".", ",") + " km/h", "minimum–maximum");
+        appendRecordItem(elements.lapDetailStats, "Otáčky", Math.round(lap.minRpm || 0) + "–" + Math.round(lap.maxRpm || 0), "rpm minimum–maximum");
+        drawTelemetryMap(elements.lapMap, gpsLap ? [gpsLap.points] : [], session.track, "speed");
+        drawTelemetryChart(elements.lapChart, gpsLap ? [gpsLap] : [], [{ index: 2, colors: ["var(--primary)"] }, { index: 3, colors: ["var(--viz-series-2)"] }]);
+        elements.lapNote.textContent = hasTelemetry(gpsLap) ? "Mapa: červená = pomalu, zelená = rychle. Graf kombinuje rychlost (žlutě) a otáčky (modře)." : "GPS stopa je dostupná, ale detailní rychlost a otáčky ještě nejsou uložené. Nahraj původní ZIP tohoto tréninku znovu.";
+        Array.from(elements.dataLaps.children).forEach(function (button) { button.classList.toggle("is-active", Number(button.dataset.lap) === Number(lapNumber)); });
+      }
+
+      function renderDataLaps(session) {
+        elements.dataLaps.innerHTML = "";
+        session.laps.forEach(function (lap) {
+          var button = document.createElement("button");
+          button.type = "button"; button.className = "kp-data-lap"; button.dataset.lap = lap.lap;
+          button.innerHTML = "<span>K" + lap.lap + "</span><strong>" + formatLapTime(lap.ms) + "</strong><small>" + (lap.ms === session.bestMs ? "BEST" : "+" + formatLapTime(lap.ms - session.bestMs)) + "</small>";
+          button.addEventListener("click", function () { renderLapDetail(session, lap.lap); });
+          elements.dataLaps.appendChild(button);
+        });
+        renderLapDetail(session, session.bestLap);
+      }
+
+      function fillLapSelect(select, session, selected) {
+        select.innerHTML = "";
+        session.laps.forEach(function (lap) { var option = document.createElement("option"); option.value = lap.lap; option.textContent = "Kolo " + lap.lap + " · " + formatLapTime(lap.ms); option.selected = lap.lap === selected; select.appendChild(option); });
+      }
+
+      function renderComparison(session) {
+        var lapA = session.laps.find(function (lap) { return lap.lap === Number(elements.compareA.value); });
+        var lapB = session.laps.find(function (lap) { return lap.lap === Number(elements.compareB.value); });
+        if (!lapA || !lapB) return;
+        var gpsA = gpsLapFor(session, lapA.lap), gpsB = gpsLapFor(session, lapB.lap), delta = lapB.ms - lapA.ms;
+        elements.compareStats.innerHTML = "";
+        appendRecordItem(elements.compareStats, "Kolo A", formatLapTime(lapA.ms) + " s", "kolo " + lapA.lap);
+        appendRecordItem(elements.compareStats, "Kolo B", formatLapTime(lapB.ms) + " s", "kolo " + lapB.lap);
+        appendRecordItem(elements.compareStats, "Rozdíl B proti A", (delta >= 0 ? "+" : "−") + formatLapTime(Math.abs(delta)) + " s", delta > 0 ? "Kolo A je rychlejší" : delta < 0 ? "Kolo B je rychlejší" : "shodný čas");
+        drawTelemetryMap(elements.compareMap, [gpsA && gpsA.points, gpsB && gpsB.points], session.track, "compare");
+        drawTelemetryChart(elements.compareChart, [gpsA, gpsB].filter(Boolean), [{ index: 2, colors: ["var(--primary)", "var(--viz-series-2)"] }]);
+      }
+
+      function detectCorners(gpsLap) {
+        if (!hasTelemetry(gpsLap)) return [];
+        var points = gpsLap.points, candidates = [];
+        for (var i = 5; i < points.length - 5; i += 1) {
+          if (!Number.isFinite(points[i][2])) continue;
+          var local = points.slice(i - 5, i + 6).map(function (point) { return point[2]; });
+          if (points[i][2] === Math.min.apply(null, local)) candidates.push({ index: i, point: points[i], speed: points[i][2] });
+        }
+        return candidates.sort(function (a, b) { return a.speed - b.speed; }).reduce(function (chosen, item) {
+          if (chosen.every(function (other) { return Math.abs(other.index - item.index) > 16; })) chosen.push(item);
+          return chosen;
+        }, []).slice(0, 8).sort(function (a, b) { return a.index - b.index; });
+      }
+
+      function renderCorners(session) {
+        var gpsLap = gpsLapFor(session, session.bestLap), corners = detectCorners(gpsLap);
+        elements.cornerGrid.innerHTML = "";
+        drawTelemetryMap(elements.cornerMap, gpsLap ? [gpsLap.points] : [], session.track, "speed", corners.map(function (corner, index) { return { point: corner.point, text: "Z" + (index + 1) }; }));
+        corners.forEach(function (corner, index) {
+          var before = gpsLap.points[Math.max(0, corner.index - 10)], after = gpsLap.points[Math.min(gpsLap.points.length - 1, corner.index + 10)];
+          appendRecordItem(elements.cornerGrid, "Zatáčka Z" + (index + 1), corner.speed.toFixed(1).replace(".", ",") + " km/h", "nájezd " + (before[2] || 0).toFixed(1).replace(".", ",") + " · výjezd " + (after[2] || 0).toFixed(1).replace(".", ","));
+        });
+        if (!corners.length) appendRecordItem(elements.cornerGrid, "Chybí detailní telemetrie", "Nahraj ZIP znovu", "poté se automaticky rozpoznají zatáčky");
+      }
+
+      function renderEngine(session) {
+        var gpsLap = gpsLapFor(session, session.bestLap);
+        elements.engineStats.innerHTML = "";
+        if (!hasTelemetry(gpsLap)) {
+          elements.engineChart.innerHTML = "";
+          elements.engineNote.textContent = "Pro průběh otáček nahraj původní ZIP tohoto tréninku znovu.";
+          return;
+        }
+        var rpms = gpsLap.points.map(function (point) { return point[3]; }).filter(Number.isFinite), max = Math.max.apply(null, rpms), min = Math.min.apply(null, rpms), avg = rpms.reduce(function (sum, rpm) { return sum + rpm; }, 0) / rpms.length;
+        var high = Math.round(rpms.filter(function (rpm) { return rpm >= max * .9; }).length / rpms.length * 100);
+        appendRecordItem(elements.engineStats, "Maximum", Math.round(max) + " rpm", "nejlepší kolo");
+        appendRecordItem(elements.engineStats, "Průměr", Math.round(avg) + " rpm", "celé kolo");
+        appendRecordItem(elements.engineStats, "Minimum", Math.round(min) + " rpm", "největší propad");
+        appendRecordItem(elements.engineStats, "Ve vysokých otáčkách", high + " %", "nad 90 % maxima");
+        drawTelemetryChart(elements.engineChart, [gpsLap], [{ index: 3, colors: ["var(--viz-series-2)"] }]);
+        elements.engineNote.textContent = "Průběh otáček nejlepšího kola. Výrazné propady obvykle odpovídají nejpomalejším zatáčkám.";
+      }
+
+      function renderDataCenter() {
+        var sessions = dataSessions();
+        if (!sessions.length) return;
+        var previous = elements.dataSession.value;
+        elements.dataSession.innerHTML = "";
+        sessions.forEach(function (session, index) { var option = document.createElement("option"); option.value = index; option.textContent = session.track + " · " + session.date + " " + session.time; elements.dataSession.appendChild(option); });
+        elements.dataSession.value = previous && Number(previous) < sessions.length ? previous : String(sessions.length - 1);
+        var session = selectedDataSession();
+        elements.dataCenterCopy.textContent = session.track + " · " + session.date + " · " + session.time + " · " + session.laps.length + " kol";
+        renderDataOverview(session); renderDataLaps(session);
+        fillLapSelect(elements.compareA, session, session.bestLap);
+        fillLapSelect(elements.compareB, session, session.laps[session.laps.length - 1].lap);
+        renderComparison(session); renderCorners(session); renderEngine(session);
+      }
+
       function parseAlfanoTimestamp(dateText, timeText) {
         var dateParts = String(dateText || "").split("-").map(Number);
         var timeParts = String(timeText || "").replace("H", ":").split(":").map(Number);
@@ -1891,14 +2153,25 @@
         var headers = lines[0].split(",").map(function (value) { return value.trim(); });
         var latIndex = headers.indexOf("Lat.");
         var lonIndex = headers.indexOf("Lon.");
+        var speedIndex = headers.indexOf("Speed GPS");
+        var rpmIndex = headers.indexOf("RPM");
+        var forceXIndex = headers.indexOf("Gf. X");
+        var forceYIndex = headers.indexOf("Gf. Y");
+        var headingIndex = headers.indexOf("Orientation");
         if (latIndex < 0 || lonIndex < 0) return [];
-        return lines.slice(1).map(function (line) {
+        return lines.slice(1).map(function (line, index) {
+          if (index % 3 !== 0 && index !== lines.length - 2) return null;
           var columns = line.split(",");
           var lat = Number(columns[latIndex]);
           var lon = Number(columns[lonIndex]);
           if (Math.abs(lat) > 90) lat /= 1000000;
           if (Math.abs(lon) > 180) lon /= 1000000;
-          return Number.isFinite(lat) && Number.isFinite(lon) && lat && lon ? [lat, lon] : null;
+          var speed = speedIndex >= 0 ? Number(columns[speedIndex]) / 10 : NaN;
+          var rpm = rpmIndex >= 0 ? Number(columns[rpmIndex]) : NaN;
+          var gx = forceXIndex >= 0 ? (Number(columns[forceXIndex]) - 1000) / 100 : NaN;
+          var gy = forceYIndex >= 0 ? (Number(columns[forceYIndex]) - 1000) / 100 : NaN;
+          var heading = headingIndex >= 0 ? Number(columns[headingIndex]) / 10 : NaN;
+          return Number.isFinite(lat) && Number.isFinite(lon) && lat && lon ? [lat, lon, speed, rpm, gx, gy, heading] : null;
         }).filter(Boolean);
       }
 
@@ -2531,6 +2804,19 @@
       elements.manageAlfano.addEventListener("click", function () {
         if (typeof elements.alfanoDialog.showModal === "function") elements.alfanoDialog.showModal();
       });
+      elements.openDataCenter.addEventListener("click", function () {
+        renderDataCenter();
+        if (typeof elements.dataCenterDialog.showModal === "function") elements.dataCenterDialog.showModal();
+      });
+      elements.dataTabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          elements.dataTabs.forEach(function (item) { item.setAttribute("aria-selected", item === tab ? "true" : "false"); });
+          elements.dataPanels.forEach(function (panel) { panel.hidden = panel.dataset.dataPanel !== tab.dataset.panel; });
+        });
+      });
+      elements.dataSession.addEventListener("change", renderDataCenter);
+      elements.compareA.addEventListener("change", function () { renderComparison(selectedDataSession()); });
+      elements.compareB.addEventListener("change", function () { renderComparison(selectedDataSession()); });
       elements.openIdealMap.addEventListener("click", function () {
         renderIdealMap();
         if (typeof elements.idealMapDialog.showModal === "function") elements.idealMapDialog.showModal();
