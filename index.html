@@ -30,7 +30,7 @@
 
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: var(--background); }
-    body { min-height: 100vh; overflow: hidden; }
+    body { min-height: 100vh; min-height: 100dvh; overflow: hidden; }
     button, input, select { font: inherit; }
 
     .card {
@@ -69,8 +69,15 @@
       white-space: nowrap;
     }
 
-    #karting-program-app { min-height: 100vh; }
-    #karting-program-app .kp-shell { min-height: 100vh; max-height: 100vh; border-radius: 0; }
+    #karting-program-app { min-height: 100vh; min-height: 100dvh; }
+    #karting-program-app .kp-shell {
+      height: 100vh !important;
+      height: 100dvh !important;
+      min-height: 100vh !important;
+      min-height: 100dvh !important;
+      max-height: none !important;
+      border-radius: 0;
+    }
     #karting-program-app .kp-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 
     #karting-program-app .kp-pdf-dialog {
@@ -98,7 +105,7 @@
 
     @media (max-width: 900px), (max-height: 620px) {
       body { overflow: auto; }
-      #karting-program-app .kp-shell { max-height: none; }
+      #karting-program-app .kp-shell { height: auto !important; max-height: none !important; }
     }
   </style>
 </head>
@@ -117,7 +124,7 @@
     #karting-program-app .kp-shell {
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(220px, .82fr);
-      grid-template-rows: auto auto minmax(220px, 1fr) auto minmax(170px, .58fr) auto;
+      grid-template-rows: auto auto minmax(220px, 1fr) auto minmax(235px, .75fr) auto;
       gap: var(--kp-gap);
       min-height: 620px;
       max-height: 900px;
@@ -140,7 +147,7 @@
 
     #karting-program-app .kp-topline {
       grid-column: 1 / -1;
-      min-height: 68px;
+      min-height: 96px;
     }
 
     #karting-program-app .kp-brand {
@@ -152,11 +159,11 @@
     }
 
     #karting-program-app .kp-logo-frame {
-      width: clamp(180px, 19vw, 265px);
-      height: clamp(52px, 5.4vw, 76px);
+      width: clamp(300px, 24vw, 420px);
+      height: clamp(88px, 7.2vw, 112px);
       overflow: hidden;
       border-radius: 10px;
-      background: var(--card);
+      background: #fff;
       border: 1px solid var(--border);
     }
 
@@ -164,8 +171,8 @@
       width: 100%;
       height: 100%;
       display: block;
-      object-fit: cover;
-      object-position: center 53%;
+      object-fit: contain;
+      object-position: center;
     }
 
     #karting-program-app .kp-brand-copy {
@@ -397,9 +404,10 @@
     #karting-program-app .kp-alfano-stat span { display: block; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #karting-program-app .kp-alfano-stat strong { display: block; margin-top: 3px; font-size: clamp(1.1rem, 1.7vw, 1.85rem); line-height: 1; font-variant-numeric: tabular-nums; }
     #karting-program-app .kp-alfano-stat small { display: block; margin-top: 4px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #karting-program-app .kp-alfano-chart-wrap { min-width: 0; display: grid; grid-template-rows: auto minmax(90px, 1fr); gap: 4px; }
-    #karting-program-app .kp-alfano-chart-wrap svg { width: 100%; height: 100%; min-height: 90px; overflow: visible; color: var(--foreground); }
-    #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 90px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
+    #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(145px, 1fr); gap: 6px; }
+    #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 145px; max-height: 190px; overflow: visible; color: var(--foreground); }
+    #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 145px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
+    #karting-program-app .kp-alfano-chart-wrap [hidden] { display: none !important; }
     #karting-program-app .kp-file-input { width: 100%; }
     #karting-program-app .kp-alfano-message { min-height: 22px; color: var(--muted-foreground); }
     #karting-program-app .kp-alfano-message.is-error { color: var(--viz-series-1); }
@@ -551,7 +559,7 @@
       <div class="kp-alfano-chart-wrap">
         <span class="kp-subtle">Nejlepší kolo jednotlivých tréninků</span>
         <div class="kp-chart-empty" id="kp-alfano-empty">Po jízdě nahraj ZIP z Alfana</div>
-        <svg id="kp-alfano-chart" viewBox="0 0 680 120" role="img" aria-label="Vývoj nejlepších časů tréninků" hidden></svg>
+        <svg id="kp-alfano-chart" viewBox="0 0 680 160" role="img" aria-label="Vývoj nejlepších časů tréninků" hidden></svg>
       </div>
     </section>
 
@@ -1117,11 +1125,11 @@
         elements.alfanoChart.hidden = false;
         elements.alfanoEmpty.hidden = true;
         var width = 680;
-        var height = 120;
-        var left = 32;
-        var right = 18;
-        var top = 24;
-        var bottom = 28;
+        var height = 160;
+        var left = 42;
+        var right = 24;
+        var top = 30;
+        var bottom = 36;
         var values = chartSessions.map(function (session) { return session.bestMs / 1000; });
         var minimum = Math.min.apply(null, values);
         var maximum = Math.max.apply(null, values);
@@ -1143,22 +1151,22 @@
         if (points.length > 1) {
           elements.alfanoChart.appendChild(createSvgElement("polyline", {
             points: points.map(function (point) { return point.x + "," + point.y; }).join(" "),
-            fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "3", "stroke-linejoin": "round", "stroke-linecap": "round"
+            fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "4", "stroke-linejoin": "round", "stroke-linecap": "round"
           }));
         }
 
         points.forEach(function (point) {
           var isBest = point.session.bestMs === Math.min.apply(null, sortedSessions.map(function (session) { return session.bestMs; }));
           elements.alfanoChart.appendChild(createSvgElement("circle", {
-            cx: point.x, cy: point.y, r: isBest ? "6" : "5",
+            cx: point.x, cy: point.y, r: isBest ? "7" : "6",
             fill: isBest ? "var(--primary)" : "var(--viz-series-2)",
             stroke: "var(--background)", "stroke-width": "2"
           }));
           elements.alfanoChart.appendChild(createSvgElement("text", {
-            x: point.x, y: Math.max(11, point.y - 9), "text-anchor": "middle", fill: "currentColor", "font-size": "10", "font-weight": "600"
+            x: point.x, y: Math.max(15, point.y - 11), "text-anchor": "middle", fill: "currentColor", "font-size": "12", "font-weight": "700"
           }, formatLapTime(point.session.bestMs)));
           elements.alfanoChart.appendChild(createSvgElement("text", {
-            x: point.x, y: height - 8, "text-anchor": "middle", fill: "var(--muted-foreground)", "font-size": "10"
+            x: point.x, y: height - 11, "text-anchor": "middle", fill: "var(--muted-foreground)", "font-size": "12", "font-weight": "600"
           }, point.session.time || "T" + (point.index + 1)));
         });
       }
