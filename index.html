@@ -124,7 +124,7 @@
     #karting-program-app .kp-shell {
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(220px, .82fr);
-      grid-template-rows: auto auto minmax(220px, 1fr) auto minmax(235px, .75fr) auto;
+      grid-template-rows: auto auto minmax(200px, 1fr) auto minmax(180px, .75fr) auto;
       gap: var(--kp-gap);
       min-height: 620px;
       max-height: 900px;
@@ -159,8 +159,9 @@
     }
 
     #karting-program-app .kp-logo-frame {
-      width: clamp(300px, 24vw, 420px);
-      height: clamp(88px, 7.2vw, 112px);
+      position: relative;
+      width: clamp(280px, 19vw, 360px);
+      aspect-ratio: 1384 / 712;
       overflow: hidden;
       border-radius: 10px;
       background: #fff;
@@ -168,11 +169,12 @@
     }
 
     #karting-program-app .kp-logo-frame img {
-      width: 100%;
-      height: 100%;
+      position: absolute;
+      width: 111%;
+      height: auto;
+      max-width: none;
       display: block;
-      object-fit: contain;
-      object-position: center;
+      transform: translate(-4.7%, -17.2%);
     }
 
     #karting-program-app .kp-brand-copy {
@@ -404,9 +406,9 @@
     #karting-program-app .kp-alfano-stat span { display: block; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #karting-program-app .kp-alfano-stat strong { display: block; margin-top: 3px; font-size: clamp(1.1rem, 1.7vw, 1.85rem); line-height: 1; font-variant-numeric: tabular-nums; }
     #karting-program-app .kp-alfano-stat small { display: block; margin-top: 4px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(145px, 1fr); gap: 6px; }
-    #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 145px; max-height: 190px; overflow: visible; color: var(--foreground); }
-    #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 145px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
+    #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(120px, 1fr); gap: 6px; }
+    #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 120px; overflow: visible; color: var(--foreground); }
+    #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 120px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
     #karting-program-app .kp-alfano-chart-wrap [hidden] { display: none !important; }
     #karting-program-app .kp-file-input { width: 100%; }
     #karting-program-app .kp-alfano-message { min-height: 22px; color: var(--muted-foreground); }
@@ -431,6 +433,16 @@
       #karting-program-app .kp-control-line { align-items: flex-start; }
     }
 
+    @media (min-width: 901px) and (max-height: 850px) {
+      #karting-program-app { --kp-gap: 8px; }
+      #karting-program-app .kp-shell { grid-template-rows: auto auto minmax(185px, 1fr) auto minmax(165px, .72fr) auto; }
+      #karting-program-app .kp-topline { min-height: 72px; }
+      #karting-program-app .kp-logo-frame { width: 260px; }
+      #karting-program-app .kp-alfano-chart-wrap,
+      #karting-program-app .kp-alfano-chart-wrap svg,
+      #karting-program-app .kp-chart-empty { min-height: 105px; }
+    }
+
     @media (max-width: 620px) {
       #karting-program-app .kp-shell { display: block; min-height: 0; }
       #karting-program-app .kp-shell > * { margin-bottom: 10px; }
@@ -440,6 +452,7 @@
       #karting-program-app .kp-session-row { align-items: flex-start; }
       #karting-program-app .kp-tag { display: none; }
       #karting-program-app .kp-brand-copy { display: none; }
+      #karting-program-app .kp-logo-frame { width: min(280px, 62vw); }
     }
   </style>
 
@@ -1117,13 +1130,13 @@
         var chartSessions = sortedSessions.slice(-10);
         elements.alfanoChart.innerHTML = "";
         if (!chartSessions.length) {
-          elements.alfanoChart.hidden = true;
-          elements.alfanoEmpty.hidden = false;
+          elements.alfanoChart.setAttribute("hidden", "");
+          elements.alfanoEmpty.removeAttribute("hidden");
           return;
         }
 
-        elements.alfanoChart.hidden = false;
-        elements.alfanoEmpty.hidden = true;
+        elements.alfanoChart.removeAttribute("hidden");
+        elements.alfanoEmpty.setAttribute("hidden", "");
         var width = 680;
         var height = 160;
         var left = 42;
