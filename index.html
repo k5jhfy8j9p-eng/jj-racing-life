@@ -1881,10 +1881,10 @@
           elements.idealMap.appendChild(createSvgElement("image", { href: background.src, x: "0", y: "0", width: width, height: height, preserveAspectRatio: "none" }));
         }
         elements.idealMap.appendChild(createSvgElement("rect", { x: "0", y: "0", width: width, height: height, fill: background ? "rgba(3,8,13,.14)" : "rgba(3,8,13,.24)" }));
-        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "6", "stroke-dasharray": "12 8", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "1.5", "stroke-dasharray": "5 4", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         idealPaths.forEach(function (path) {
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.72)", "stroke-width": "12", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "7", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.6)", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         });
         idealPaths.slice(0, 2).forEach(function (path, index) {
           var lastPoint = path[path.length - 1];
