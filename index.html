@@ -2089,7 +2089,7 @@
         if (!sessions.length) return;
         var previous = elements.dataSession.value;
         elements.dataSession.innerHTML = "";
-        sessions.forEach(function (session, index) { var option = document.createElement("option"); option.value = index; option.textContent = session.track + " · " + session.date + " " + session.time; elements.dataSession.appendChild(option); });
+        sessions.forEach(function (session, index) { var option = document.createElement("option"); option.value = index; option.textContent = session.track + " · " + session.date + " " + session.time + ((session.gpsLaps || []).some(hasTelemetry) ? " · TELEMETRIE" : ""); elements.dataSession.appendChild(option); });
         elements.dataSession.value = previous && Number(previous) < sessions.length ? previous : String(sessions.length - 1);
         var session = selectedDataSession();
         elements.dataCenterCopy.textContent = session.track + " · " + session.date + " · " + session.time + " · " + session.laps.length + " kol";
