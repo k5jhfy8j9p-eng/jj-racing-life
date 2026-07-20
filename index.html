@@ -160,7 +160,8 @@
 
     #karting-program-app .kp-logo-frame {
       position: relative;
-      width: clamp(280px, 19vw, 360px);
+      flex: 0 0 auto;
+      width: clamp(400px, 29vw, 520px);
       aspect-ratio: 1384 / 712;
       overflow: hidden;
       border-radius: 10px;
@@ -170,6 +171,8 @@
 
     #karting-program-app .kp-logo-frame img {
       position: absolute;
+      top: 0;
+      left: 0;
       width: 111%;
       height: auto;
       max-width: none;
@@ -178,7 +181,7 @@
     }
 
     #karting-program-app .kp-brand-copy {
-      display: grid;
+      display: none;
       gap: 2px;
     }
 
@@ -431,13 +434,14 @@
       #karting-program-app .kp-alfano-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       #karting-program-app .kp-control-stack { align-items: flex-start; }
       #karting-program-app .kp-control-line { align-items: flex-start; }
+      #karting-program-app .kp-logo-frame { width: clamp(300px, 38vw, 360px); }
     }
 
     @media (min-width: 901px) and (max-height: 850px) {
       #karting-program-app { --kp-gap: 8px; }
       #karting-program-app .kp-shell { grid-template-rows: auto auto minmax(185px, 1fr) auto minmax(165px, .72fr) auto; }
       #karting-program-app .kp-topline { min-height: 72px; }
-      #karting-program-app .kp-logo-frame { width: 260px; }
+      #karting-program-app .kp-logo-frame { width: 360px; }
       #karting-program-app .kp-alfano-chart-wrap,
       #karting-program-app .kp-alfano-chart-wrap svg,
       #karting-program-app .kp-chart-empty { min-height: 105px; }
@@ -452,7 +456,7 @@
       #karting-program-app .kp-session-row { align-items: flex-start; }
       #karting-program-app .kp-tag { display: none; }
       #karting-program-app .kp-brand-copy { display: none; }
-      #karting-program-app .kp-logo-frame { width: min(280px, 62vw); }
+      #karting-program-app .kp-logo-frame { width: min(300px, 72vw); }
     }
   </style>
 
