@@ -533,6 +533,14 @@
     #karting-program-app .kp-alfano-stat span { display: block; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #karting-program-app .kp-alfano-stat strong { display: block; margin-top: 3px; font-size: clamp(1.1rem, 1.7vw, 1.85rem); line-height: 1; font-variant-numeric: tabular-nums; }
     #karting-program-app .kp-alfano-stat small { display: block; margin-top: 4px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #karting-program-app .kp-ideal-trigger { appearance: none; border: 1px solid transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    #karting-program-app .kp-ideal-trigger:hover,
+    #karting-program-app .kp-ideal-trigger:focus-visible { border-color: var(--primary); box-shadow: 0 0 18px rgba(255, 212, 0, .16); outline: none; }
+    #karting-program-app .kp-ideal-map { width: 100%; min-height: 360px; border: 1px solid var(--border); border-radius: 14px; background: radial-gradient(circle at 50% 45%, #16283a, #080d14 72%); }
+    #karting-program-app .kp-map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; color: var(--muted-foreground); }
+    #karting-program-app .kp-map-legend span::before { content: ""; display: inline-block; width: 22px; height: 4px; margin-right: 7px; vertical-align: middle; border-radius: 4px; background: var(--viz-series-2); }
+    #karting-program-app .kp-map-legend .is-ideal::before { background: var(--primary); }
+    #karting-program-app .kp-map-details { color: var(--muted-foreground); }
     #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(120px, 1fr); gap: 6px; }
     #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 120px; overflow: visible; color: var(--foreground); }
     #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 120px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
@@ -714,7 +722,7 @@
         <div class="kp-alfano-stat"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></div>
         <div class="kp-alfano-stat"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></div>
         <div class="kp-alfano-stat"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></div>
-        <div class="kp-alfano-stat"><span>Ideální kolo</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">3 GPS sektory</small></div>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-ideal-map" title="Zobrazit ideální GPS stopu"><span>Ideální kolo</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">3 GPS sektory</small></button>
         <div class="kp-alfano-stat"><span>Celkem kol</span><strong id="kp-alfano-total-laps">—</strong><small id="kp-alfano-total-laps-note">0 tréninků</small></div>
       </div>
       <div class="kp-alfano-chart-wrap">
@@ -782,6 +790,22 @@
         <button type="button" class="btn btn-ghost" id="kp-clear-alfano">Vymazat data víkendu</button>
         <button type="button" class="btn btn-primary" id="kp-import-alfano">Načíst vybrané ZIPy</button>
       </div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-ideal-map-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div>
+          <h2>Ideální složená stopa</h2>
+          <p class="kp-dialog-copy" id="kp-ideal-map-copy">Nejrychlejší skutečně projeté sektory v porovnání s nejlepším celým kolem.</p>
+        </div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div class="kp-map-legend"><span>Nejlepší celé kolo</span><span class="is-ideal">Ideální složená stopa</span></div>
+      <div class="kp-chart-empty" id="kp-ideal-map-empty">Pro zobrazení stopy nahraj Alfano ZIPy znovu.</div>
+      <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
+      <div class="kp-map-details" id="kp-ideal-map-details"></div>
     </div>
   </dialog>
 
@@ -941,6 +965,12 @@
         alfanoConsistencyNote: root.querySelector("#kp-alfano-consistency-note"),
         alfanoLaps: root.querySelector("#kp-alfano-laps"),
         alfanoLapsNote: root.querySelector("#kp-alfano-laps-note"),
+        openIdealMap: root.querySelector("#kp-open-ideal-map"),
+        idealMapDialog: root.querySelector("#kp-ideal-map-dialog"),
+        idealMap: root.querySelector("#kp-ideal-map"),
+        idealMapEmpty: root.querySelector("#kp-ideal-map-empty"),
+        idealMapCopy: root.querySelector("#kp-ideal-map-copy"),
+        idealMapDetails: root.querySelector("#kp-ideal-map-details"),
         alfanoTotalLaps: root.querySelector("#kp-alfano-total-laps"),
         alfanoTotalLapsNote: root.querySelector("#kp-alfano-total-laps-note"),
         alfanoChart: root.querySelector("#kp-alfano-chart"),
@@ -1679,6 +1709,20 @@
         return best;
       }
 
+      function gpsPointAtPosition(points, position) {
+        var index = Math.max(0, Math.min(points.length - 1, Math.floor(position)));
+        var next = Math.min(points.length - 1, index + 1);
+        var part = Math.max(0, Math.min(1, position - index));
+        return [points[index][0] + (points[next][0] - points[index][0]) * part, points[index][1] + (points[next][1] - points[index][1]) * part];
+      }
+
+      function sliceGpsPath(points, start, end) {
+        var path = [gpsPointAtPosition(points, start)];
+        for (var i = Math.ceil(start); i <= Math.floor(end); i += 1) path.push(points[i]);
+        path.push(gpsPointAtPosition(points, end));
+        return path;
+      }
+
       function applyVirtualSectors(sessions) {
         var changed = false;
         var groups = {};
@@ -1696,8 +1740,10 @@
           var reference = candidates.reduce(function (best, item) { return item.lap.ms < best.lap.ms ? item : best; }, candidates[0]);
           var profile = alfanoSectorProfiles[key];
           if (!profile || !Array.isArray(profile.gates) || profile.gates.length !== 2) {
-            profile = { track: reference.session.track, gates: [gpsGateAtFraction(reference.lap.points, 1 / 3), gpsGateAtFraction(reference.lap.points, 2 / 3)], bestSectors: [null, null, null] };
+            profile = { track: reference.session.track, gates: [gpsGateAtFraction(reference.lap.points, 1 / 3), gpsGateAtFraction(reference.lap.points, 2 / 3)], bestSectors: [null, null, null], bestSectorPaths: [null, null, null], bestSectorSources: [null, null, null] };
           }
+          if (!Array.isArray(profile.bestSectorPaths)) profile.bestSectorPaths = [null, null, null];
+          if (!Array.isArray(profile.bestSectorSources)) profile.bestSectorSources = [null, null, null];
           candidates.forEach(function (item) {
             var first = nearestGpsGate(item.lap.points, profile.gates[0], 0.15, 0.55);
             var second = nearestGpsGate(item.lap.points, profile.gates[1], 0.45, 0.85);
@@ -1706,10 +1752,20 @@
             var firstMs = item.lap.ms * first.position / last;
             var secondMs = item.lap.ms * second.position / last;
             var sectors = [firstMs, secondMs - firstMs, item.lap.ms - secondMs];
+            var sectorPaths = [sliceGpsPath(item.lap.points, 0, first.position), sliceGpsPath(item.lap.points, first.position, second.position), sliceGpsPath(item.lap.points, second.position, last)];
             item.session.virtualSectors = (item.session.virtualSectors || []).concat([sectors]);
             sectors.forEach(function (value, index) {
-              if (!Number.isFinite(profile.bestSectors[index]) || value < profile.bestSectors[index]) profile.bestSectors[index] = value;
+              if (!Number.isFinite(profile.bestSectors[index]) || value < profile.bestSectors[index] || !Array.isArray(profile.bestSectorPaths[index])) {
+                profile.bestSectors[index] = value;
+                profile.bestSectorPaths[index] = sectorPaths[index];
+                profile.bestSectorSources[index] = { session: item.session.time || "", date: item.session.date || "", lap: item.lap.lap, ms: Math.round(value) };
+              }
             });
+            if (!Number.isFinite(profile.bestLapMs) || item.lap.ms < profile.bestLapMs || !Array.isArray(profile.bestLapPath)) {
+              profile.bestLapMs = item.lap.ms;
+              profile.bestLapPath = item.lap.points;
+              profile.bestLapSource = { session: item.session.time || "", date: item.session.date || "", lap: item.lap.lap };
+            }
           });
           if (profile.bestSectors.every(Number.isFinite)) {
             profile.theoreticalMs = Math.round(profile.bestSectors.reduce(function (sum, value) { return sum + value; }, 0));
@@ -1755,6 +1811,55 @@
         Object.keys(attributes || {}).forEach(function (key) { element.setAttribute(key, attributes[key]); });
         if (textValue !== undefined) element.textContent = textValue;
         return element;
+      }
+
+      function renderIdealMap() {
+        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        var latest = sorted[sorted.length - 1];
+        var profile = latest ? alfanoSectorProfiles[trackRecordKey(latest.track)] : null;
+        var hasPaths = profile && Array.isArray(profile.bestLapPath) && Array.isArray(profile.bestSectorPaths) && profile.bestSectorPaths.every(Array.isArray);
+        elements.idealMap.innerHTML = "";
+        if (!hasPaths) {
+          elements.idealMap.setAttribute("hidden", "");
+          elements.idealMapEmpty.removeAttribute("hidden");
+          elements.idealMapDetails.textContent = latest ? "Časy jsou uložené, ale GPS stopa ještě ne. Nahraj ZIPy této tratě znovu." : "Nejdřív nahraj data z Alfana.";
+          return;
+        }
+        elements.idealMap.removeAttribute("hidden");
+        elements.idealMapEmpty.setAttribute("hidden", "");
+        elements.idealMapCopy.textContent = profile.track + " · ideální " + formatLapTime(profile.theoreticalMs) + " s · nejlepší celé kolo " + formatLapTime(profile.bestLapMs) + " s";
+        var allPaths = [profile.bestLapPath].concat(profile.bestSectorPaths);
+        var allPoints = allPaths.flat();
+        var centerLat = allPoints.reduce(function (sum, point) { return sum + point[0]; }, 0) / allPoints.length;
+        var scaleX = Math.cos(centerLat * Math.PI / 180);
+        var metric = allPoints.map(function (point) { return [point[1] * scaleX, point[0]]; });
+        var minX = Math.min.apply(null, metric.map(function (point) { return point[0]; }));
+        var maxX = Math.max.apply(null, metric.map(function (point) { return point[0]; }));
+        var minY = Math.min.apply(null, metric.map(function (point) { return point[1]; }));
+        var maxY = Math.max.apply(null, metric.map(function (point) { return point[1]; }));
+        var width = 760, height = 420, padding = 34;
+        var factor = Math.min((width - padding * 2) / Math.max(0.000001, maxX - minX), (height - padding * 2) / Math.max(0.000001, maxY - minY));
+        function svgPoints(path) {
+          return path.map(function (point) {
+            var x = padding + (point[1] * scaleX - minX) * factor;
+            var y = height - padding - (point[0] - minY) * factor;
+            return x.toFixed(1) + "," + y.toFixed(1);
+          }).join(" ");
+        }
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "rgba(255,255,255,.16)", "stroke-width": "12", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "4", "stroke-dasharray": "9 7", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        profile.bestSectorPaths.forEach(function (path) {
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "5", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        });
+        profile.bestSectorPaths.slice(0, 2).forEach(function (path, index) {
+          var lastPoint = path[path.length - 1];
+          var xy = svgPoints([lastPoint]).split(",");
+          elements.idealMap.appendChild(createSvgElement("circle", { cx: xy[0], cy: xy[1], r: "8", fill: "var(--background)", stroke: "var(--primary)", "stroke-width": "4" }));
+          elements.idealMap.appendChild(createSvgElement("text", { x: Number(xy[0]) + 12, y: Number(xy[1]) - 10, fill: "white", "font-size": "14", "font-weight": "800" }, "S" + (index + 1)));
+        });
+        elements.idealMapDetails.textContent = profile.bestSectorSources.map(function (source, index) {
+          return "S" + (index + 1) + ": " + formatLapTime(source.ms) + " s · trénink " + source.session + " · kolo " + source.lap;
+        }).join("   |   ");
       }
 
       function renderAlfanoChart(sortedSessions) {
@@ -2163,6 +2268,10 @@
 
       elements.manageAlfano.addEventListener("click", function () {
         if (typeof elements.alfanoDialog.showModal === "function") elements.alfanoDialog.showModal();
+      });
+      elements.openIdealMap.addEventListener("click", function () {
+        renderIdealMap();
+        if (typeof elements.idealMapDialog.showModal === "function") elements.idealMapDialog.showModal();
       });
       elements.importAlfano.addEventListener("click", importAlfanoFiles);
       elements.exportBackup.addEventListener("click", exportAlfanoBackup);
