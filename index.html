@@ -71,7 +71,30 @@
 
     #karting-program-app { min-height: 100vh; }
     #karting-program-app .kp-shell { min-height: 100vh; max-height: 100vh; border-radius: 0; }
-    #karting-program-app .kp-header-actions { display: flex; align-items: center; gap: 9px; }
+    #karting-program-app .kp-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
+
+    #karting-program-app .kp-pdf-dialog {
+      width: min(620px, calc(100% - 28px));
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--card);
+      color: var(--card-foreground);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, .55);
+    }
+
+    #karting-program-app .kp-pdf-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+    #karting-program-app .kp-dialog-body { display: grid; gap: 16px; padding: 22px; }
+    #karting-program-app .kp-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    #karting-program-app .kp-dialog-head h2 { margin: 0; font-size: 1.35rem; }
+    #karting-program-app .kp-dialog-copy { margin: 0; color: var(--muted-foreground); }
+    #karting-program-app .kp-pdf-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+    #karting-program-app .kp-pdf-status { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    #karting-program-app .kp-pdf-status > div { padding: 11px; border-radius: 10px; background: var(--muted); }
+    #karting-program-app .kp-pdf-status strong, #karting-program-app .kp-pdf-status span { display: block; }
+    #karting-program-app .kp-pdf-status span { margin-top: 4px; color: var(--muted-foreground); }
+    #karting-program-app .kp-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
+    #karting-program-app .kp-dialog-actions a { text-decoration: none; }
 
     @media (max-width: 900px), (max-height: 620px) {
       body { overflow: auto; }
@@ -383,7 +406,9 @@
         <span class="kp-brand-copy"><span>ŽIVÝ PROGRAM DEPA</span><span>Tillotson T4 Series · Junior</span></span>
       </div>
       <div class="kp-header-actions">
+        <span class="viz-badge" id="kp-data-badge">Rozpis: výchozí</span>
         <span class="viz-badge" id="kp-status-badge">Podle plánu</span>
+        <button type="button" class="btn" id="kp-manage-pdf">Nový víkend</button>
         <button type="button" class="btn" id="kp-fullscreen">Celá obrazovka</button>
       </div>
     </div>
@@ -476,6 +501,32 @@
     <div class="kp-footer-note" id="kp-footer-note">Ukázka pracuje s dodaným pátečním a sobotním harmonogramem.</div>
   </div>
 
+  <dialog class="kp-pdf-dialog" id="kp-pdf-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div>
+          <h2>Nový závodní víkend</h2>
+          <p class="kp-dialog-copy">Nahraj nové PDF do GitHubu. Aplikace je po zveřejnění sama přečte.</p>
+        </div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <ol class="kp-pdf-steps">
+        <li>Páteční rozpis přejmenuj přesně na <strong>patek.pdf</strong>.</li>
+        <li>Sobotní rozpis přejmenuj přesně na <strong>sobota.pdf</strong>.</li>
+        <li>Nahraj oba soubory a potvrď tlačítkem <strong>Commit changes</strong>.</li>
+        <li>Po zveřejnění se vrať sem a stiskni <strong>Načíst nové PDF</strong>.</li>
+      </ol>
+      <div class="kp-pdf-status">
+        <div><strong>Pátek</strong><span id="kp-pdf-friday">Používám výchozí rozpis</span></div>
+        <div><strong>Sobota</strong><span id="kp-pdf-saturday">Používám výchozí rozpis</span></div>
+      </div>
+      <div class="kp-dialog-actions">
+        <a class="btn" href="https://github.com/k5jhfy8j9p-eng/jj-racing-life/upload/main" target="_blank" rel="noopener">Otevřít nahrávání PDF</a>
+        <button type="button" class="btn btn-primary" id="kp-reload-pdf">Načíst nové PDF</button>
+      </div>
+    </div>
+  </dialog>
+
   <script>
     (function () {
       var root = document.getElementById("karting-program-app");
@@ -490,7 +541,7 @@
         return { start: minutes(start), end: minutes(end), category: category, type: type, detail: detail || "" };
       }
 
-      var schedules = {
+      var builtInSchedules = {
         friday: [
           item("08:00", "08:15", "Senior 165", "Volný trénink"),
           item("08:20", "08:35", "Senior", "Volný trénink"),
@@ -546,6 +597,18 @@
         ]
       };
 
+      var schedules = {
+        friday: builtInSchedules.friday.slice(),
+        saturday: builtInSchedules.saturday.slice()
+      };
+
+      var scheduleMeta = {
+        friday: { source: "Výchozí rozpis", remote: false, error: "" },
+        saturday: { source: "Výchozí rozpis", remote: false, error: "" }
+      };
+      var pdfLibraryPromise = null;
+      var remoteLoading = false;
+
       function loadSetting(key) {
         try { return localStorage.getItem(key); } catch (error) { return null; }
       }
@@ -573,6 +636,12 @@
         demoTime: root.querySelector("#kp-demo-time"),
         demoLabel: root.querySelector("#kp-demo-label"),
         fullscreen: root.querySelector("#kp-fullscreen"),
+        managePdf: root.querySelector("#kp-manage-pdf"),
+        pdfDialog: root.querySelector("#kp-pdf-dialog"),
+        reloadPdf: root.querySelector("#kp-reload-pdf"),
+        pdfFriday: root.querySelector("#kp-pdf-friday"),
+        pdfSaturday: root.querySelector("#kp-pdf-saturday"),
+        dataBadge: root.querySelector("#kp-data-badge"),
         minus: root.querySelector("#kp-delay-minus"),
         reset: root.querySelector("#kp-delay-reset"),
         plus: root.querySelector("#kp-delay-plus"),
@@ -625,6 +694,220 @@
         var hours = Math.floor(mins / 60);
         var rest = mins % 60;
         return hours + " h" + (rest ? " " + rest + " min" : "");
+      }
+
+      function isJuniorCategory(category) {
+        return /junior/i.test(category || "");
+      }
+
+      function scheduleIsValid(sessions) {
+        return Array.isArray(sessions) && sessions.length >= 4 && sessions.every(function (session) {
+          return Number.isFinite(session.start) && Number.isFinite(session.end) && session.end > session.start && Boolean(session.category);
+        });
+      }
+
+      function restoreCachedSchedules() {
+        ["friday", "saturday"].forEach(function (day) {
+          var saved = loadSetting("karting-pdf-schedule-" + day);
+          if (!saved) return;
+          try {
+            var parsed = JSON.parse(saved);
+            if (!scheduleIsValid(parsed.sessions)) return;
+            schedules[day] = parsed.sessions;
+            scheduleMeta[day] = {
+              source: "Poslední načtené PDF",
+              remote: true,
+              error: "",
+              modified: parsed.modified || ""
+            };
+          } catch (error) { /* Poškozenou uloženou kopii ignorujeme. */ }
+        });
+      }
+
+      function getPdfLibrary() {
+        if (!pdfLibraryPromise) {
+          pdfLibraryPromise = import("https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.min.mjs").then(function (pdfjs) {
+            pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+            return pdfjs;
+          }).catch(function (error) {
+            pdfLibraryPromise = null;
+            throw error;
+          });
+        }
+        return pdfLibraryPromise;
+      }
+
+      function groupTextItemsIntoLines(items) {
+        var lines = [];
+        items.forEach(function (textItem) {
+          if (!textItem.str || !textItem.str.trim() || !textItem.transform) return;
+          var x = textItem.transform[4];
+          var y = textItem.transform[5];
+          var line = lines.find(function (candidate) { return Math.abs(candidate.y - y) < 1.8; });
+          if (!line) {
+            line = { y: y, parts: [] };
+            lines.push(line);
+          }
+          line.parts.push({ x: x, text: textItem.str.trim() });
+        });
+
+        return lines.sort(function (a, b) { return b.y - a.y; }).map(function (line) {
+          return line.parts.sort(function (a, b) { return a.x - b.x; }).map(function (part) {
+            return part.text;
+          }).join(" | ").replace(/\s+/g, " ").trim();
+        });
+      }
+
+      async function extractPdfLines(arrayBuffer) {
+        var pdfjs = await getPdfLibrary();
+        var loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
+        var pdf = await loadingTask.promise;
+        var allLines = [];
+
+        for (var pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          var page = await pdf.getPage(pageNumber);
+          var textContent = await page.getTextContent();
+          allLines = allLines.concat(groupTextItemsIntoLines(textContent.items));
+        }
+
+        if (typeof pdf.destroy === "function") await pdf.destroy();
+        return allLines;
+      }
+
+      function parseScheduleLines(lines) {
+        var sessions = [];
+        var currentType = "";
+        var trackSectionStarted = false;
+
+        lines.forEach(function (line) {
+          var upper = line.toLocaleUpperCase("cs-CZ");
+
+          if (upper.includes("VOLN") && upper.includes("TRÉN")) {
+            currentType = "Volný trénink";
+            trackSectionStarted = true;
+            return;
+          }
+          if ((upper.includes("MĚŘ") || upper.includes("MEREN")) && upper.includes("TRÉN")) {
+            currentType = "Měřený trénink";
+            trackSectionStarted = true;
+            return;
+          }
+          if (upper.includes("KVALIF")) {
+            currentType = "Kvalifikace";
+            trackSectionStarted = true;
+            return;
+          }
+          if (upper.includes("WARM") || upper.includes("ZAHŘÍVAC")) {
+            currentType = "Warm-up";
+            trackSectionStarted = true;
+            return;
+          }
+          if (/1\.?\s*ZÁVOD|ZÁVOD\s*1/.test(upper)) {
+            currentType = "1. závod";
+            trackSectionStarted = true;
+            return;
+          }
+          if (/2\.?\s*ZÁVOD|ZÁVOD\s*2/.test(upper)) {
+            currentType = "2. závod";
+            trackSectionStarted = true;
+            return;
+          }
+          if (upper.includes("PREFINÁLE") || upper.includes("PŘEDFINÁLE")) {
+            currentType = "Předfinále";
+            trackSectionStarted = true;
+            return;
+          }
+          if (upper.includes("FINÁLE")) {
+            currentType = "Finále";
+            trackSectionStarted = true;
+            return;
+          }
+
+          if (!trackSectionStarted) return;
+          var match = line.match(/(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})\s*(?:\|\s*)?(.+)/);
+          if (!match) return;
+
+          var tail = match[3].replace(/^\|\s*/, "").trim();
+          var columns = tail.split(/\s*\|\s*/).filter(Boolean);
+          var category = (columns.shift() || "").trim();
+          if (!category || /^(KATEGORIE|AKTIVITA|DÉLKA|POČET KOL)$/i.test(category)) return;
+
+          var type = currentType || "Jízda";
+          if (/OBĚD|PAUZA/i.test(category)) type = "Pauza";
+          sessions.push(item(match[1], match[2], category, type, columns.join(" · ")));
+        });
+
+        var unique = [];
+        var seen = new Set();
+        sessions.sort(function (a, b) { return a.start - b.start; }).forEach(function (session) {
+          var key = [session.start, session.end, session.category, session.type].join("|");
+          if (seen.has(key)) return;
+          seen.add(key);
+          unique.push(session);
+        });
+
+        if (!scheduleIsValid(unique)) throw new Error("V PDF nebyl nalezen dostatečný počet jízd.");
+        if (!unique.some(function (session) { return isJuniorCategory(session.category); })) {
+          throw new Error("V PDF nebyla nalezena žádná kategorie Junior.");
+        }
+        return unique;
+      }
+
+      async function loadPdfDay(day, fileName) {
+        var response = await fetch(fileName + "?v=" + Date.now(), { cache: "no-store" });
+        if (!response.ok) throw new Error(response.status === 404 ? "Soubor zatím není nahraný." : "PDF se nepodařilo stáhnout.");
+        var lines = await extractPdfLines(await response.arrayBuffer());
+        var parsedSessions = parseScheduleLines(lines);
+        var modified = response.headers.get("last-modified") || "";
+        schedules[day] = parsedSessions;
+        scheduleMeta[day] = { source: "Aktuální PDF", remote: true, error: "", modified: modified };
+        saveSetting("karting-pdf-schedule-" + day, JSON.stringify({ sessions: parsedSessions, modified: modified }));
+      }
+
+      function formatPdfStatus(day) {
+        var meta = scheduleMeta[day];
+        var sessions = schedules[day];
+        var juniorCount = sessions.filter(function (session) { return isJuniorCategory(session.category); }).length;
+        if (meta.error) return meta.error + " Používám " + meta.source.toLocaleLowerCase("cs-CZ") + ".";
+        return meta.source + " · " + sessions.length + " položek · Junior " + juniorCount + "×";
+      }
+
+      function renderPdfStatus(loading) {
+        if (loading) {
+          elements.dataBadge.textContent = "Načítám PDF…";
+        } else {
+          var currentPdfCount = ["friday", "saturday"].filter(function (day) { return scheduleMeta[day].source === "Aktuální PDF"; }).length;
+          var anyPdfCount = ["friday", "saturday"].filter(function (day) { return scheduleMeta[day].remote; }).length;
+          elements.dataBadge.textContent = currentPdfCount === 2 ? "Rozpis PDF ✓" : currentPdfCount === 1 ? "PDF 1/2" : anyPdfCount ? "Rozpis: uložený" : "Rozpis: výchozí";
+        }
+        elements.pdfFriday.textContent = formatPdfStatus("friday");
+        elements.pdfSaturday.textContent = formatPdfStatus("saturday");
+      }
+
+      async function loadRemoteSchedules() {
+        if (remoteLoading) return;
+        remoteLoading = true;
+        elements.reloadPdf.disabled = true;
+        elements.reloadPdf.textContent = "Načítám…";
+        renderPdfStatus(true);
+
+        var jobs = [
+          { day: "friday", file: "patek.pdf" },
+          { day: "saturday", file: "sobota.pdf" }
+        ];
+        var results = await Promise.allSettled(jobs.map(function (job) { return loadPdfDay(job.day, job.file); }));
+
+        results.forEach(function (result, index) {
+          if (result.status === "fulfilled") return;
+          var day = jobs[index].day;
+          scheduleMeta[day].error = result.reason && result.reason.message ? result.reason.message : "PDF se nepodařilo načíst.";
+        });
+
+        elements.reloadPdf.disabled = false;
+        elements.reloadPdf.textContent = "Načíst nové PDF";
+        remoteLoading = false;
+        renderPdfStatus(false);
+        render();
       }
 
       function effective(session) {
@@ -702,7 +985,7 @@
 
         upcoming.forEach(function (session) {
           var row = document.createElement("div");
-          row.className = "kp-session-row" + (session.category === "Junior" ? " is-junior" : "");
+          row.className = "kp-session-row" + (isJuniorCategory(session.category) ? " is-junior" : "");
           row.setAttribute("aria-label", formatClock(session.start, false) + ", " + session.category + ", " + session.type);
 
           var time = document.createElement("span");
@@ -732,9 +1015,9 @@
       }
 
       function renderTeam(sessions, now, situation) {
-        var currentJunior = situation.current && situation.current.category === "Junior" ? situation.current : null;
+        var currentJunior = situation.current && isJuniorCategory(situation.current.category) ? situation.current : null;
         var nextJunior = sessions.find(function (session) {
-          return session.category === "Junior" && session.start > now;
+          return isJuniorCategory(session.category) && session.start > now;
         });
 
         if (currentJunior) {
@@ -804,7 +1087,7 @@
         } else {
           elements.currentLabel.textContent = "Stav programu";
           elements.currentCategory.textContent = "Program skončil";
-          elements.currentMeta.textContent = state.day === "saturday" ? "Vyhlášení výsledků v 16:20" : "Povinná rozprava jezdců v 18:30";
+          elements.currentMeta.textContent = "Dnešní program na trati je dokončen.";
           elements.currentCountLabel.textContent = "Další jízdy dnes";
           elements.currentCount.textContent = "—";
           elements.progressBar.style.width = "100%";
@@ -817,7 +1100,7 @@
         } else {
           elements.nextIn.textContent = "dnes hotovo";
           elements.nextMain.textContent = "Žádná další jízda";
-          elements.nextMeta.textContent = state.day === "saturday" ? "16:20 · vyhlášení výsledků" : "18:30 · povinná rozprava jezdců";
+          elements.nextMeta.textContent = "Program podle načteného harmonogramu skončil.";
         }
 
         renderTeam(sessions, now, situation);
@@ -843,6 +1126,11 @@
         render();
       });
 
+      elements.managePdf.addEventListener("click", function () {
+        if (typeof elements.pdfDialog.showModal === "function") elements.pdfDialog.showModal();
+      });
+      elements.reloadPdf.addEventListener("click", loadRemoteSchedules);
+
       elements.fullscreen.addEventListener("click", function () {
         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
           document.documentElement.requestFullscreen();
@@ -860,9 +1148,13 @@
         state.day = today === 5 ? "friday" : "saturday";
         state.live = true;
       }
+      restoreCachedSchedules();
+      renderPdfStatus(false);
       setDay(state.day);
       setMode(state.live);
+      loadRemoteSchedules();
       window.setInterval(function () { if (state.live) render(); }, 1000);
+      window.setInterval(loadRemoteSchedules, 5 * 60 * 1000);
     })();
   </script>
 </div>
