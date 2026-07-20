@@ -117,7 +117,7 @@
     #karting-program-app .kp-shell {
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(220px, .82fr);
-      grid-template-rows: auto auto minmax(260px, 1fr) auto auto;
+      grid-template-rows: auto auto minmax(220px, 1fr) auto minmax(170px, .58fr) auto;
       gap: var(--kp-gap);
       min-height: 620px;
       max-height: 900px;
@@ -371,6 +371,39 @@
       text-align: center;
     }
 
+    #karting-program-app .kp-alfano-panel {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(390px, .95fr) minmax(360px, 1.05fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 10px 16px;
+      min-height: 0;
+      padding-top: 12px;
+      padding-bottom: 12px;
+      background: color-mix(in srgb, var(--viz-series-2) 8%, var(--card));
+    }
+
+    #karting-program-app .kp-alfano-head {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #karting-program-app .kp-alfano-head-copy { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
+    #karting-program-app .kp-alfano-metrics { display: grid; grid-template-columns: repeat(4, minmax(78px, 1fr)); gap: 8px; }
+    #karting-program-app .kp-alfano-stat { min-width: 0; padding: 8px 10px; border-radius: 10px; background: var(--muted); }
+    #karting-program-app .kp-alfano-stat span { display: block; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #karting-program-app .kp-alfano-stat strong { display: block; margin-top: 3px; font-size: clamp(1.1rem, 1.7vw, 1.85rem); line-height: 1; font-variant-numeric: tabular-nums; }
+    #karting-program-app .kp-alfano-stat small { display: block; margin-top: 4px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #karting-program-app .kp-alfano-chart-wrap { min-width: 0; display: grid; grid-template-rows: auto minmax(90px, 1fr); gap: 4px; }
+    #karting-program-app .kp-alfano-chart-wrap svg { width: 100%; height: 100%; min-height: 90px; overflow: visible; color: var(--foreground); }
+    #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 90px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
+    #karting-program-app .kp-file-input { width: 100%; }
+    #karting-program-app .kp-alfano-message { min-height: 22px; color: var(--muted-foreground); }
+    #karting-program-app .kp-alfano-message.is-error { color: var(--viz-series-1); }
+
     #karting-program-app input[type="time"] { max-width: 130px; }
 
     @media (max-width: 900px) {
@@ -383,6 +416,9 @@
       #karting-program-app .kp-team-card { grid-column: 2; }
       #karting-program-app .kp-next-card { grid-column: 1 / -1; }
       #karting-program-app .kp-session-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      #karting-program-app .kp-alfano-panel { grid-template-columns: 1fr; }
+      #karting-program-app .kp-alfano-head { grid-column: 1; }
+      #karting-program-app .kp-alfano-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       #karting-program-app .kp-control-stack { align-items: flex-start; }
       #karting-program-app .kp-control-line { align-items: flex-start; }
     }
@@ -498,6 +534,27 @@
       <div class="kp-session-list" id="kp-session-list"></div>
     </section>
 
+    <section class="card kp-alfano-panel" aria-live="polite">
+      <div class="kp-alfano-head">
+        <div class="kp-alfano-head-copy">
+          <span class="kp-eyebrow">ALFANO · VÝKON VÍKENDU</span>
+          <span class="kp-subtle" id="kp-alfano-summary">Zatím nejsou nahraná žádná data</span>
+        </div>
+        <button type="button" class="btn" id="kp-manage-alfano">Nahrát Alfano ZIP</button>
+      </div>
+      <div class="kp-alfano-metrics">
+        <div class="kp-alfano-stat"><span>Nejlepší kolo</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord víkendu</small></div>
+        <div class="kp-alfano-stat"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></div>
+        <div class="kp-alfano-stat"><span>Max. rychlost</span><strong id="kp-alfano-speed">—</strong><small>km/h</small></div>
+        <div class="kp-alfano-stat"><span>Celkem kol</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">0 tréninků</small></div>
+      </div>
+      <div class="kp-alfano-chart-wrap">
+        <span class="kp-subtle">Nejlepší kolo jednotlivých tréninků</span>
+        <div class="kp-chart-empty" id="kp-alfano-empty">Po jízdě nahraj ZIP z Alfana</div>
+        <svg id="kp-alfano-chart" viewBox="0 0 680 120" role="img" aria-label="Vývoj nejlepších časů tréninků" hidden></svg>
+      </div>
+    </section>
+
     <div class="kp-footer-note" id="kp-footer-note">Ukázka pracuje s dodaným pátečním a sobotním harmonogramem.</div>
   </div>
 
@@ -523,6 +580,27 @@
       <div class="kp-dialog-actions">
         <a class="btn" href="https://github.com/k5jhfy8j9p-eng/jj-racing-life/upload/main" target="_blank" rel="noopener">Otevřít nahrávání PDF</a>
         <button type="button" class="btn btn-primary" id="kp-reload-pdf">Načíst nové PDF</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-alfano-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div>
+          <h2>Data z Alfana</h2>
+          <p class="kp-dialog-copy">Vyber jeden nebo více originálních ZIP souborů. Zpracování proběhne pouze v tomto zařízení.</p>
+        </div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div>
+        <label class="form-label" for="kp-alfano-files">ZIP soubory z Alfana</label>
+        <input class="form-control kp-file-input" id="kp-alfano-files" type="file" accept=".zip,application/zip" multiple>
+      </div>
+      <div class="kp-alfano-message" id="kp-alfano-message">Starší tréninky zůstanou uložené a nové se k nim přidají.</div>
+      <div class="kp-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="kp-clear-alfano">Vymazat data víkendu</button>
+        <button type="button" class="btn btn-primary" id="kp-import-alfano">Načíst vybrané ZIPy</button>
       </div>
     </div>
   </dialog>
@@ -608,6 +686,8 @@
       };
       var pdfLibraryPromise = null;
       var remoteLoading = false;
+      var fflateLibraryPromise = null;
+      var alfanoSessions = [];
 
       function loadSetting(key) {
         try { return localStorage.getItem(key); } catch (error) { return null; }
@@ -642,6 +722,22 @@
         pdfFriday: root.querySelector("#kp-pdf-friday"),
         pdfSaturday: root.querySelector("#kp-pdf-saturday"),
         dataBadge: root.querySelector("#kp-data-badge"),
+        manageAlfano: root.querySelector("#kp-manage-alfano"),
+        alfanoDialog: root.querySelector("#kp-alfano-dialog"),
+        alfanoFiles: root.querySelector("#kp-alfano-files"),
+        importAlfano: root.querySelector("#kp-import-alfano"),
+        clearAlfano: root.querySelector("#kp-clear-alfano"),
+        alfanoMessage: root.querySelector("#kp-alfano-message"),
+        alfanoSummary: root.querySelector("#kp-alfano-summary"),
+        alfanoBest: root.querySelector("#kp-alfano-best"),
+        alfanoBestNote: root.querySelector("#kp-alfano-best-note"),
+        alfanoLatest: root.querySelector("#kp-alfano-latest"),
+        alfanoLatestNote: root.querySelector("#kp-alfano-latest-note"),
+        alfanoSpeed: root.querySelector("#kp-alfano-speed"),
+        alfanoLaps: root.querySelector("#kp-alfano-laps"),
+        alfanoLapsNote: root.querySelector("#kp-alfano-laps-note"),
+        alfanoChart: root.querySelector("#kp-alfano-chart"),
+        alfanoEmpty: root.querySelector("#kp-alfano-empty"),
         minus: root.querySelector("#kp-delay-minus"),
         reset: root.querySelector("#kp-delay-reset"),
         plus: root.querySelector("#kp-delay-plus"),
@@ -910,6 +1006,229 @@
         render();
       }
 
+      function getFflateLibrary() {
+        if (!fflateLibraryPromise) {
+          fflateLibraryPromise = import("https://cdn.jsdelivr.net/npm/fflate@0.8.3/+esm").catch(function (error) {
+            fflateLibraryPromise = null;
+            throw error;
+          });
+        }
+        return fflateLibraryPromise;
+      }
+
+      function alfanoSessionIsValid(session) {
+        return session && session.fileName && Array.isArray(session.laps) && session.laps.length > 0 && Number.isFinite(session.bestMs);
+      }
+
+      function restoreAlfanoSessions() {
+        var saved = loadSetting("karting-alfano-sessions");
+        if (!saved) return;
+        try {
+          var parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) alfanoSessions = parsed.filter(alfanoSessionIsValid);
+        } catch (error) { /* Poškozenou uloženou kopii ignorujeme. */ }
+      }
+
+      function saveAlfanoSessions() {
+        saveSetting("karting-alfano-sessions", JSON.stringify(alfanoSessions));
+      }
+
+      function parseAlfanoTimestamp(dateText, timeText) {
+        var dateParts = String(dateText || "").split("-").map(Number);
+        var timeParts = String(timeText || "").replace("H", ":").split(":").map(Number);
+        if (dateParts.length !== 3 || timeParts.length < 2) return 0;
+        return new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0], timeParts[1]).getTime();
+      }
+
+      function parseAlfanoSummary(fileName, csvText) {
+        var lines = csvText.replace(/^\uFEFF/, "").split(/\r?\n/).filter(function (line) { return line.trim(); });
+        if (lines.length < 3) throw new Error("Souhrnný CSV soubor je prázdný.");
+
+        var metadata = lines[0].split(",");
+        var date = (metadata[0] || "").trim();
+        var time = (metadata[1] || "").trim();
+        var track = (metadata[4] || "").trim();
+        var driver = (metadata[5] || "").trim();
+        var laps = lines.slice(2).map(function (line) {
+          var columns = line.split(",");
+          return {
+            lap: Number(columns[0]),
+            ms: Number(columns[1]),
+            minRpm: Number(columns[8]),
+            maxRpm: Number(columns[9]),
+            minSpeed: Number(columns[10]) / 10,
+            maxSpeed: Number(columns[11]) / 10
+          };
+        }).filter(function (lap) {
+          return Number.isFinite(lap.lap) && Number.isFinite(lap.ms) && lap.ms > 0;
+        });
+
+        if (!laps.length) throw new Error("V souhrnu nebyla nalezena žádná platná kola.");
+        var bestLap = laps.reduce(function (best, lap) { return lap.ms < best.ms ? lap : best; }, laps[0]);
+        return {
+          fileName: fileName,
+          date: date,
+          time: time,
+          timestamp: parseAlfanoTimestamp(date, time),
+          track: track || "Trať",
+          driver: driver || "JJ",
+          laps: laps,
+          bestMs: bestLap.ms,
+          bestLap: bestLap.lap,
+          lastMs: laps[laps.length - 1].ms,
+          maxSpeed: Math.max.apply(null, laps.map(function (lap) { return lap.maxSpeed; })),
+          maxRpm: Math.max.apply(null, laps.map(function (lap) { return lap.maxRpm; }))
+        };
+      }
+
+      async function parseAlfanoZip(file) {
+        if (!/\.zip$/i.test(file.name)) throw new Error(file.name + ": soubor není ZIP.");
+        var fflate = await getFflateLibrary();
+        var entries = fflate.unzipSync(new Uint8Array(await file.arrayBuffer()));
+        var summaryName = Object.keys(entries).find(function (name) {
+          var baseName = name.split("/").pop();
+          return /^SN\d+_.*\.csv$/i.test(baseName) && !/^LAP_/i.test(baseName);
+        });
+        if (!summaryName) throw new Error(file.name + ": chybí souhrnný CSV soubor.");
+        return parseAlfanoSummary(file.name, fflate.strFromU8(entries[summaryName]));
+      }
+
+      function formatLapTime(milliseconds) {
+        if (!Number.isFinite(milliseconds)) return "—";
+        return (milliseconds / 1000).toFixed(3).replace(".", ",");
+      }
+
+      function createSvgElement(name, attributes, textValue) {
+        var element = document.createElementNS("http://www.w3.org/2000/svg", name);
+        Object.keys(attributes || {}).forEach(function (key) { element.setAttribute(key, attributes[key]); });
+        if (textValue !== undefined) element.textContent = textValue;
+        return element;
+      }
+
+      function renderAlfanoChart(sortedSessions) {
+        var chartSessions = sortedSessions.slice(-10);
+        elements.alfanoChart.innerHTML = "";
+        if (!chartSessions.length) {
+          elements.alfanoChart.hidden = true;
+          elements.alfanoEmpty.hidden = false;
+          return;
+        }
+
+        elements.alfanoChart.hidden = false;
+        elements.alfanoEmpty.hidden = true;
+        var width = 680;
+        var height = 120;
+        var left = 32;
+        var right = 18;
+        var top = 24;
+        var bottom = 28;
+        var values = chartSessions.map(function (session) { return session.bestMs / 1000; });
+        var minimum = Math.min.apply(null, values);
+        var maximum = Math.max.apply(null, values);
+        var range = Math.max(1, maximum - minimum);
+        var usableWidth = width - left - right;
+        var usableHeight = height - top - bottom;
+
+        elements.alfanoChart.appendChild(createSvgElement("line", {
+          x1: left, y1: height - bottom, x2: width - right, y2: height - bottom,
+          stroke: "var(--border)", "stroke-width": "1"
+        }));
+
+        var points = chartSessions.map(function (session, index) {
+          var x = chartSessions.length === 1 ? width / 2 : left + index * usableWidth / (chartSessions.length - 1);
+          var y = top + ((session.bestMs / 1000 - minimum) / range) * usableHeight;
+          return { x: x, y: y, session: session, index: index };
+        });
+
+        if (points.length > 1) {
+          elements.alfanoChart.appendChild(createSvgElement("polyline", {
+            points: points.map(function (point) { return point.x + "," + point.y; }).join(" "),
+            fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "3", "stroke-linejoin": "round", "stroke-linecap": "round"
+          }));
+        }
+
+        points.forEach(function (point) {
+          var isBest = point.session.bestMs === Math.min.apply(null, sortedSessions.map(function (session) { return session.bestMs; }));
+          elements.alfanoChart.appendChild(createSvgElement("circle", {
+            cx: point.x, cy: point.y, r: isBest ? "6" : "5",
+            fill: isBest ? "var(--primary)" : "var(--viz-series-2)",
+            stroke: "var(--background)", "stroke-width": "2"
+          }));
+          elements.alfanoChart.appendChild(createSvgElement("text", {
+            x: point.x, y: Math.max(11, point.y - 9), "text-anchor": "middle", fill: "currentColor", "font-size": "10", "font-weight": "600"
+          }, formatLapTime(point.session.bestMs)));
+          elements.alfanoChart.appendChild(createSvgElement("text", {
+            x: point.x, y: height - 8, "text-anchor": "middle", fill: "var(--muted-foreground)", "font-size": "10"
+          }, point.session.time || "T" + (point.index + 1)));
+        });
+      }
+
+      function renderAlfano() {
+        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) {
+          return (a.timestamp || 0) - (b.timestamp || 0) || a.fileName.localeCompare(b.fileName);
+        });
+        if (!sorted.length) {
+          elements.alfanoSummary.textContent = "Zatím nejsou nahraná žádná data";
+          elements.alfanoBest.textContent = "—";
+          elements.alfanoLatest.textContent = "—";
+          elements.alfanoSpeed.textContent = "—";
+          elements.alfanoLaps.textContent = "—";
+          elements.alfanoBestNote.textContent = "rekord víkendu";
+          elements.alfanoLatestNote.textContent = "zatím bez dat";
+          elements.alfanoLapsNote.textContent = "0 tréninků";
+          renderAlfanoChart([]);
+          return;
+        }
+
+        var latest = sorted[sorted.length - 1];
+        var best = sorted.reduce(function (winner, session) { return session.bestMs < winner.bestMs ? session : winner; }, sorted[0]);
+        var totalLaps = sorted.reduce(function (total, session) { return total + session.laps.length; }, 0);
+        var maxSpeed = Math.max.apply(null, sorted.map(function (session) { return session.maxSpeed; }));
+        var bestIndex = sorted.indexOf(best) + 1;
+        var latestDelta = latest.bestMs - best.bestMs;
+
+        elements.alfanoSummary.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků") + " · " + latest.track + " · poslední " + latest.time;
+        elements.alfanoBest.textContent = formatLapTime(best.bestMs);
+        elements.alfanoBestNote.textContent = "trénink " + bestIndex + " · kolo " + best.bestLap;
+        elements.alfanoLatest.textContent = formatLapTime(latest.bestMs);
+        elements.alfanoLatestNote.textContent = latestDelta === 0 ? "NOVÝ REKORD" : "+" + formatLapTime(latestDelta) + " s";
+        elements.alfanoSpeed.textContent = maxSpeed.toFixed(1).replace(".", ",");
+        elements.alfanoLaps.textContent = String(totalLaps);
+        elements.alfanoLapsNote.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků");
+        renderAlfanoChart(sorted);
+      }
+
+      async function importAlfanoFiles() {
+        var files = Array.from(elements.alfanoFiles.files || []);
+        if (!files.length) {
+          elements.alfanoMessage.textContent = "Nejdřív vyber alespoň jeden ZIP soubor.";
+          elements.alfanoMessage.classList.add("is-error");
+          return;
+        }
+
+        elements.importAlfano.disabled = true;
+        elements.importAlfano.textContent = "Načítám…";
+        elements.alfanoMessage.textContent = "Zpracovávám " + files.length + (files.length === 1 ? " soubor…" : " soubory…");
+        elements.alfanoMessage.classList.remove("is-error");
+
+        try {
+          var imported = await Promise.all(files.map(parseAlfanoZip));
+          var byFileName = new Map(alfanoSessions.map(function (session) { return [session.fileName, session]; }));
+          imported.forEach(function (session) { byFileName.set(session.fileName, session); });
+          alfanoSessions = Array.from(byFileName.values());
+          saveAlfanoSessions();
+          renderAlfano();
+          elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink." : " tréninky.");
+          elements.alfanoFiles.value = "";
+        } catch (error) {
+          elements.alfanoMessage.textContent = error && error.message ? error.message : "ZIP se nepodařilo načíst.";
+          elements.alfanoMessage.classList.add("is-error");
+        } finally {
+          elements.importAlfano.disabled = false;
+          elements.importAlfano.textContent = "Načíst vybrané ZIPy";
+        }
+      }
+
       function effective(session) {
         return {
           start: session.start + state.delay,
@@ -1131,6 +1450,19 @@
       });
       elements.reloadPdf.addEventListener("click", loadRemoteSchedules);
 
+      elements.manageAlfano.addEventListener("click", function () {
+        if (typeof elements.alfanoDialog.showModal === "function") elements.alfanoDialog.showModal();
+      });
+      elements.importAlfano.addEventListener("click", importAlfanoFiles);
+      elements.clearAlfano.addEventListener("click", function () {
+        if (!window.confirm("Opravdu vymazat všechny uložené tréninky tohoto víkendu?")) return;
+        alfanoSessions = [];
+        saveAlfanoSessions();
+        renderAlfano();
+        elements.alfanoMessage.textContent = "Data víkendu byla vymazána.";
+        elements.alfanoMessage.classList.remove("is-error");
+      });
+
       elements.fullscreen.addEventListener("click", function () {
         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
           document.documentElement.requestFullscreen();
@@ -1149,7 +1481,9 @@
         state.live = true;
       }
       restoreCachedSchedules();
+      restoreAlfanoSessions();
       renderPdfStatus(false);
+      renderAlfano();
       setDay(state.day);
       setMode(state.live);
       loadRemoteSchedules();
