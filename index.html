@@ -529,6 +529,9 @@
     #karting-program-app .kp-file-input { width: 100%; }
     #karting-program-app .kp-alfano-message { min-height: 22px; color: var(--muted-foreground); }
     #karting-program-app .kp-alfano-message.is-error { color: var(--viz-series-1); }
+    #karting-program-app .kp-backup-box { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--muted); }
+    #karting-program-app .kp-backup-copy { display: grid; gap: 3px; }
+    #karting-program-app .kp-backup-copy small { color: var(--muted-foreground); }
 
     #karting-program-app input[type="time"] { max-width: 130px; }
 
@@ -753,6 +756,17 @@
         <input class="form-control kp-file-input" id="kp-alfano-files" type="file" accept=".zip,application/zip" multiple>
       </div>
       <div class="kp-alfano-message" id="kp-alfano-message">Starší tréninky zůstanou uložené a nové se k nim přidají.</div>
+      <div class="kp-backup-box">
+        <div class="kp-backup-copy">
+          <strong>Záloha výsledků a rekordů</strong>
+          <small id="kp-backup-status">Záloha zatím nebyla stažena</small>
+        </div>
+        <div class="kp-dialog-actions">
+          <button type="button" class="btn btn-ghost" id="kp-export-backup">Stáhnout zálohu</button>
+          <button type="button" class="btn btn-ghost" id="kp-restore-backup">Obnovit ze zálohy</button>
+          <input id="kp-backup-file" type="file" accept=".json,application/json" hidden>
+        </div>
+      </div>
       <div class="kp-dialog-actions">
         <button type="button" class="btn btn-ghost" id="kp-clear-alfano">Vymazat data víkendu</button>
         <button type="button" class="btn btn-primary" id="kp-import-alfano">Načíst vybrané ZIPy</button>
@@ -903,6 +917,10 @@
         importAlfano: root.querySelector("#kp-import-alfano"),
         clearAlfano: root.querySelector("#kp-clear-alfano"),
         alfanoMessage: root.querySelector("#kp-alfano-message"),
+        exportBackup: root.querySelector("#kp-export-backup"),
+        restoreBackup: root.querySelector("#kp-restore-backup"),
+        backupFile: root.querySelector("#kp-backup-file"),
+        backupStatus: root.querySelector("#kp-backup-status"),
         alfanoSummary: root.querySelector("#kp-alfano-summary"),
         alfanoBest: root.querySelector("#kp-alfano-best"),
         alfanoBestNote: root.querySelector("#kp-alfano-best-note"),
@@ -1437,6 +1455,78 @@
 
       function saveAlfanoSectorProfiles() {
         saveSetting("karting-alfano-sector-profiles", JSON.stringify(alfanoSectorProfiles));
+      }
+
+      function formatBackupDate(value) {
+        var date = new Date(value);
+        if (!Number.isFinite(date.getTime())) return "Záloha zatím nebyla stažena";
+        return "Poslední záloha: " + date.toLocaleDateString("cs-CZ") + " " + date.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+      }
+
+      function renderBackupStatus() {
+        elements.backupStatus.textContent = formatBackupDate(loadSetting("karting-last-backup"));
+      }
+
+      function exportAlfanoBackup() {
+        var createdAt = new Date().toISOString();
+        var backup = {
+          format: "jj-racing-backup",
+          version: 1,
+          createdAt: createdAt,
+          alfanoSessions: alfanoSessions,
+          alfanoTrackRecords: alfanoTrackRecords,
+          alfanoSectorProfiles: alfanoSectorProfiles,
+          settings: { delay: state.delay, prep: state.prep }
+        };
+        var blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+        var link = document.createElement("a");
+        var day = createdAt.slice(0, 10);
+        link.href = URL.createObjectURL(blob);
+        link.download = "JJ-Racing-zaloha-" + day + ".json";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+        saveSetting("karting-last-backup", createdAt);
+        renderBackupStatus();
+        elements.alfanoMessage.textContent = "Záloha byla stažena. Ulož ji na bezpečné místo.";
+        elements.alfanoMessage.classList.remove("is-error");
+      }
+
+      async function restoreAlfanoBackup(file) {
+        try {
+          var backup = JSON.parse(await file.text());
+          if (!backup || backup.format !== "jj-racing-backup" || backup.version !== 1 || !Array.isArray(backup.alfanoSessions)) {
+            throw new Error("Soubor není platná záloha JJ Racing.");
+          }
+          var sessions = backup.alfanoSessions.filter(alfanoSessionIsValid);
+          var records = backup.alfanoTrackRecords && typeof backup.alfanoTrackRecords === "object" && !Array.isArray(backup.alfanoTrackRecords) ? backup.alfanoTrackRecords : {};
+          var profiles = backup.alfanoSectorProfiles && typeof backup.alfanoSectorProfiles === "object" && !Array.isArray(backup.alfanoSectorProfiles) ? backup.alfanoSectorProfiles : {};
+          var trackCount = Object.keys(records).length;
+          if (!window.confirm("Obnovit " + sessions.length + " tréninků a rekordy " + trackCount + (trackCount === 1 ? " tratě" : " tratí") + "? Aktuální uložená data budou nahrazena.")) return;
+          alfanoSessions = sessions;
+          alfanoTrackRecords = records;
+          alfanoSectorProfiles = profiles;
+          if (backup.settings && Number.isFinite(Number(backup.settings.delay))) state.delay = Number(backup.settings.delay);
+          if (backup.settings && Number.isFinite(Number(backup.settings.prep))) state.prep = Number(backup.settings.prep);
+          saveAlfanoSessions();
+          saveAlfanoTrackRecords();
+          saveAlfanoSectorProfiles();
+          saveSetting("karting-program-delay", String(state.delay));
+          saveSetting("karting-program-prep", String(state.prep));
+          saveSetting("karting-last-backup", backup.createdAt || new Date().toISOString());
+          elements.prepMinutes.value = String(state.prep);
+          renderBackupStatus();
+          renderAlfano();
+          render();
+          elements.alfanoMessage.textContent = "Záloha byla úspěšně obnovena: " + sessions.length + " tréninků, " + trackCount + (trackCount === 1 ? " trať." : " tratě.");
+          elements.alfanoMessage.classList.remove("is-error");
+        } catch (error) {
+          elements.alfanoMessage.textContent = error && error.message ? error.message : "Zálohu se nepodařilo obnovit.";
+          elements.alfanoMessage.classList.add("is-error");
+        } finally {
+          elements.backupFile.value = "";
+        }
       }
 
       function updateAlfanoTrackRecords(sessions) {
@@ -2060,6 +2150,12 @@
         if (typeof elements.alfanoDialog.showModal === "function") elements.alfanoDialog.showModal();
       });
       elements.importAlfano.addEventListener("click", importAlfanoFiles);
+      elements.exportBackup.addEventListener("click", exportAlfanoBackup);
+      elements.restoreBackup.addEventListener("click", function () { elements.backupFile.click(); });
+      elements.backupFile.addEventListener("change", function () {
+        var file = elements.backupFile.files && elements.backupFile.files[0];
+        if (file) restoreAlfanoBackup(file);
+      });
       elements.clearAlfano.addEventListener("click", function () {
         if (!window.confirm("Opravdu vymazat všechny uložené tréninky tohoto víkendu?")) return;
         alfanoSessions = [];
@@ -2090,6 +2186,7 @@
       restoreAlfanoSessions();
       restoreAlfanoTrackRecords();
       restoreAlfanoSectorProfiles();
+      renderBackupStatus();
       updateAlfanoTrackRecords(alfanoSessions);
       renderPdfStatus(false);
       renderAlfano();
