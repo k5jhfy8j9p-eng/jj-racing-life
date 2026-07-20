@@ -579,6 +579,10 @@
     #karting-program-app .kp-telemetry-chart { width: 100%; min-height: 210px; border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,.18); }
     #karting-program-app .kp-data-note { padding: 11px 13px; border-radius: 9px; background: var(--muted); color: var(--muted-foreground); }
     #karting-program-app .kp-corner-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; }
+    #karting-program-app .kp-coach-block { padding: 15px 17px; border-radius: 11px; background: var(--muted); border-left: 4px solid var(--viz-series-2); }
+    #karting-program-app .kp-coach-block.is-priority { border-left-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--muted)); }
+    #karting-program-app .kp-coach-block h3 { margin: 0 0 7px; font-size: 1rem; }
+    #karting-program-app .kp-coach-block p { margin: 0; color: var(--muted-foreground); line-height: 1.45; }
     @media (max-width: 850px) { #karting-program-app .kp-data-layout { grid-template-columns: 1fr; } #karting-program-app .kp-corner-grid { grid-template-columns: 1fr 1fr; } }
     #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(120px, 1fr); gap: 6px; }
     #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 120px; overflow: visible; color: var(--foreground); }
@@ -905,6 +909,7 @@
           <button class="btn kp-data-tab" data-panel="compare" aria-selected="false">Porovnání</button>
           <button class="btn kp-data-tab" data-panel="track" aria-selected="false">Trať a zatáčky</button>
           <button class="btn kp-data-tab" data-panel="engine" aria-selected="false">Motor</button>
+          <button class="btn kp-data-tab" data-panel="coach" aria-selected="false">Trenér</button>
         </div>
         <label class="form-label">Trénink <select class="form-control" id="kp-data-session"></select></label>
       </div>
@@ -913,6 +918,7 @@
       <section class="kp-data-panel" data-data-panel="compare" hidden><div class="kp-data-main"><div class="kp-data-toolbar"><label class="form-label">Kolo A <select class="form-control" id="kp-compare-a"></select></label><label class="form-label">Kolo B <select class="form-control" id="kp-compare-b"></select></label></div><div class="kp-record-grid" id="kp-compare-stats"></div><svg class="kp-telemetry-map" id="kp-compare-map" viewBox="0 0 900 500"></svg><svg class="kp-telemetry-chart" id="kp-compare-chart" viewBox="0 0 900 250"></svg></div></section>
       <section class="kp-data-panel" data-data-panel="track" hidden><div class="kp-data-main"><svg class="kp-telemetry-map" id="kp-corner-map" viewBox="0 0 900 500"></svg><div class="kp-corner-grid" id="kp-corner-grid"></div><div class="kp-data-note">Zatáčky jsou automaticky rozpoznané podle místních minim rychlosti a změny směru.</div></div></section>
       <section class="kp-data-panel" data-data-panel="engine" hidden><div class="kp-record-grid" id="kp-engine-stats"></div><svg class="kp-telemetry-chart" id="kp-engine-chart" viewBox="0 0 900 300"></svg><div class="kp-data-note" id="kp-engine-note"></div></section>
+      <section class="kp-data-panel" data-data-panel="coach" hidden><div class="kp-data-main"><div class="kp-record-grid" id="kp-coach-stats"></div><div class="kp-coach-block is-priority"><h3>Hlavní doporučení pro další jízdu</h3><p id="kp-coach-priority"></p></div><div class="kp-coach-block"><h3>Vývoj tempa</h3><p id="kp-coach-pace"></p></div><div class="kp-coach-block"><h3>Analýza zatáček</h3><p id="kp-coach-corners"></p></div><div class="kp-coach-block"><h3>Studijní kolo</h3><p id="kp-coach-study"></p></div><div class="kp-coach-block"><h3>Konkrétní cíl</h3><p id="kp-coach-target"></p></div></div></section>
     </div>
   </dialog>
 
@@ -1077,6 +1083,12 @@
         engineStats: root.querySelector("#kp-engine-stats"),
         engineChart: root.querySelector("#kp-engine-chart"),
         engineNote: root.querySelector("#kp-engine-note"),
+        coachStats: root.querySelector("#kp-coach-stats"),
+        coachPriority: root.querySelector("#kp-coach-priority"),
+        coachPace: root.querySelector("#kp-coach-pace"),
+        coachCorners: root.querySelector("#kp-coach-corners"),
+        coachStudy: root.querySelector("#kp-coach-study"),
+        coachTarget: root.querySelector("#kp-coach-target"),
         alfanoDialog: root.querySelector("#kp-alfano-dialog"),
         alfanoFiles: root.querySelector("#kp-alfano-files"),
         importAlfano: root.querySelector("#kp-import-alfano"),
@@ -2084,6 +2096,51 @@
         elements.engineNote.textContent = "Průběh otáček nejlepšího kola. Výrazné propady obvykle odpovídají nejpomalejším zatáčkám.";
       }
 
+      function standardDeviation(values) {
+        if (!values.length) return 0;
+        var average = values.reduce(function (sum, value) { return sum + value; }, 0) / values.length;
+        return Math.sqrt(values.reduce(function (sum, value) { return sum + Math.pow(value - average, 2); }, 0) / values.length);
+      }
+
+      function renderCoach(session) {
+        elements.coachStats.innerHTML = "";
+        var valid = session.laps.filter(function (lap) { return lap.ms >= session.bestMs && lap.ms <= session.bestMs + 5000; });
+        var consistency = calculateConsistency(session);
+        var topThree = valid.slice().sort(function (a, b) { return a.ms - b.ms; }).slice(0, 3);
+        var topAverage = averageMs(topThree);
+        var firstThree = valid.slice(0, 3), lastThree = valid.slice(-3);
+        var paceChange = averageMs(lastThree) - averageMs(firstThree);
+        var telemetryLaps = (session.gpsLaps || []).filter(hasTelemetry);
+        var studyLap = telemetryLaps.slice().sort(function (a, b) { return a.ms - b.ms; })[0];
+        var reference = gpsLapFor(session, session.bestLap) || studyLap;
+        var corners = detectCorners(reference);
+        var cornerStats = corners.map(function (corner, index) {
+          var fraction = corner.index / Math.max(1, reference.points.length - 1);
+          var speeds = telemetryLaps.map(function (lap) {
+            var center = Math.round(fraction * (lap.points.length - 1));
+            var radius = Math.max(3, Math.round(lap.points.length * .025));
+            return Math.min.apply(null, lap.points.slice(Math.max(0, center - radius), Math.min(lap.points.length, center + radius + 1)).map(function (point) { return point[2]; }).filter(Number.isFinite));
+          }).filter(Number.isFinite);
+          return { number: index + 1, average: speeds.length ? speeds.reduce(function (sum, speed) { return sum + speed; }, 0) / speeds.length : 0, deviation: standardDeviation(speeds), range: speeds.length ? Math.max.apply(null, speeds) - Math.min.apply(null, speeds) : 0 };
+        }).filter(function (corner) { return corner.average > 0; });
+        var weakest = cornerStats.slice().sort(function (a, b) { return b.deviation - a.deviation; })[0];
+        var strongest = cornerStats.slice().sort(function (a, b) { return a.deviation - b.deviation; })[0];
+        appendRecordItem(elements.coachStats, "Tempo Top 3", formatLapTime(topAverage) + " s", "průměr tří nejrychlejších kol");
+        appendRecordItem(elements.coachStats, "Konzistence", consistency.percent + " %", consistency.count + " z " + consistency.total + " kol do +0,5 s");
+        appendRecordItem(elements.coachStats, "Studijní kolo", studyLap ? "Kolo " + studyLap.lap : "Kolo " + session.bestLap, studyLap ? formatLapTime(studyLap.ms) + " s · kompletní telemetrie" : formatLapTime(session.bestMs) + " s");
+        appendRecordItem(elements.coachStats, "Největší rezerva", weakest ? "Zatáčka Z" + weakest.number : "—", weakest ? "rozptyl minimální rychlosti " + weakest.range.toFixed(1).replace(".", ",") + " km/h" : "nahraj ZIP znovu pro telemetrii");
+        if (weakest) elements.coachPriority.textContent = "Zaměř se na opakovatelnost v zatáčce Z" + weakest.number + ". Minimální rychlost se mezi koly lišila až o " + weakest.range.toFixed(1).replace(".", ",") + " km/h. Nehledej zatím vyšší absolutní rychlost; cílem je stejný nájezd a stejný bod přidání plynu ve třech kolech za sebou.";
+        else elements.coachPriority.textContent = consistency.percent < 70 ? "Prioritou je stabilita: pokus se zajet alespoň tři po sobě jdoucí kola do půl sekundy od nejlepšího času." : "Tempo je stabilní. Pro podrobnou analýzu místa ztráty nahraj původní ZIP tohoto tréninku znovu.";
+        if (!Number.isFinite(paceChange)) elements.coachPace.textContent = "Pro srovnání začátku a závěru je potřeba více platných kol.";
+        else if (paceChange < -100) elements.coachPace.textContent = "Závěr byl silnější: poslední tři platná kola byla v průměru o " + formatLapTime(Math.abs(paceChange)) + " s rychlejší než první tři. Jezdec se během jízdy dostal do tempa.";
+        else if (paceChange > 100) elements.coachPace.textContent = "V závěru tempo pokleslo o " + formatLapTime(paceChange) + " s. Sleduj, zda jde o pneumatiky, provoz na trati, nebo únavu a horší přesnost.";
+        else elements.coachPace.textContent = "Tempo bylo od začátku do konce vyrovnané; rozdíl prvních a posledních tří kol činil jen " + formatLapTime(Math.abs(paceChange)) + " s.";
+        elements.coachCorners.textContent = weakest && strongest ? "Nejméně opakovatelná byla Z" + weakest.number + " (odchylka " + weakest.deviation.toFixed(1).replace(".", ",") + " km/h). Nejjistější byla Z" + strongest.number + " (odchylka " + strongest.deviation.toFixed(1).replace(".", ",") + " km/h). Porovnej jejich nájezdy v záložce Trať a zatáčky." : "Detail zatáček bude dostupný po opětovném načtení ZIPu s telemetrií.";
+        elements.coachStudy.textContent = studyLap ? "Pro studium použij kolo " + studyLap.lap + " s časem " + formatLapTime(studyLap.ms) + " s. Má kompletní rychlostní stopu a průběh otáček; v záložce Kola jej porovnej s kolem, které je přibližně o sekundu pomalejší." : "Studijním kolem je aktuálně nejlepší kolo " + session.bestLap + ". Pro mapu rychlosti a motoru nahraj ZIP znovu.";
+        var targetCount = Math.max(3, Math.ceil(valid.length * .5));
+        elements.coachTarget.textContent = consistency.percent < 80 ? "V další jízdě zajeď alespoň " + targetCount + " platných kol do +0,5 s od nejlepšího času. Cílové tempo je tedy " + formatLapTime(session.bestMs + 500) + " s nebo rychlejší." : "Stabilita je dobrá. Cílem další jízdy je zopakovat tři kola pod průměrem Top 3, tedy pod " + formatLapTime(topAverage) + " s, bez výrazného propadu v nejslabší zatáčce.";
+      }
+
       function renderDataCenter() {
         var sessions = dataSessions();
         if (!sessions.length) return;
@@ -2096,7 +2153,7 @@
         renderDataOverview(session); renderDataLaps(session);
         fillLapSelect(elements.compareA, session, session.bestLap);
         fillLapSelect(elements.compareB, session, session.laps[session.laps.length - 1].lap);
-        renderComparison(session); renderCorners(session); renderEngine(session);
+        renderComparison(session); renderCorners(session); renderEngine(session); renderCoach(session);
       }
 
       function parseAlfanoTimestamp(dateText, timeText) {
