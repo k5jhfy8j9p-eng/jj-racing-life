@@ -678,10 +678,10 @@
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
       <ol class="kp-pdf-steps">
-        <li>Páteční rozpis přejmenuj přesně na <strong>patek.pdf</strong>.</li>
-        <li>Sobotní rozpis přejmenuj přesně na <strong>sobota.pdf</strong>.</li>
+        <li>První nový víkend pojmenuj <strong>patek1.pdf</strong> a <strong>sobota1.pdf</strong>.</li>
+        <li>Další víkend zvyš číslo: <strong>patek2.pdf</strong> a <strong>sobota2.pdf</strong> atd.</li>
         <li>Nahraj oba soubory a potvrď tlačítkem <strong>Commit changes</strong>.</li>
-        <li>Po zveřejnění se vrať sem a stiskni <strong>Ověřit a načíst PDF</strong>.</li>
+        <li>Po zveřejnění stiskni <strong>Ověřit a načíst PDF</strong>. Aplikace vybere nejvyšší společné číslo.</li>
       </ol>
       <div class="kp-pdf-status">
         <div><strong>Pátek</strong><span id="kp-pdf-friday">Používám výchozí rozpis</span></div>
@@ -1126,14 +1126,15 @@
         var juniorCount = sessions.filter(function (session) { return isJuniorCategory(session.category); }).length;
         if (meta.error) return meta.error + " Používám " + meta.source.toLocaleLowerCase("cs-CZ") + ".";
         var serverTime = formatPdfMoment(meta.modified);
-        return meta.source + " · " + sessions.length + " položek · Junior " + juniorCount + "×" + (serverTime ? " · soubor " + serverTime : "");
+        var range = sessions.length ? formatClock(sessions[0].start, false) + "–" + formatClock(sessions[sessions.length - 1].end, false) : "";
+        return meta.source + " · " + meta.fileName + " · " + sessions.length + " položek · Junior " + juniorCount + "×" + (range ? " · " + range : "") + (serverTime ? " · soubor " + serverTime : "");
       }
 
       function renderPdfConfirmation(loading) {
         var confirmation = elements.pdfConfirmation;
         confirmation.className = "kp-pdf-confirmation";
         if (loading) {
-          confirmation.textContent = "Kontroluji patek.pdf a sobota.pdf…";
+          confirmation.textContent = "Hledám nejnovější číslovaný rozpis…";
           return;
         }
 
@@ -1146,8 +1147,8 @@
         if (currentDays.length === 2) {
           confirmation.classList.add(changed ? "is-new" : "is-success");
           confirmation.textContent = (changed ? "✓ NOVÝ VÍKEND NAČTEN" : "✓ PDF OVĚŘENO – beze změny") +
-            " · patek.pdf: " + schedules.friday.length + " položek" +
-            " · sobota.pdf: " + schedules.saturday.length + " položek" +
+            " · " + scheduleMeta.friday.fileName + ": " + schedules.friday.length + " položek" +
+            " · " + scheduleMeta.saturday.fileName + ": " + schedules.saturday.length + " položek" +
             (lastLoaded ? " · kontrola " + formatPdfMoment(lastLoaded) : "");
           return;
         }
@@ -1173,6 +1174,48 @@
         renderPdfConfirmation(loading);
       }
 
+      function scheduleVersionMap(entries, prefix) {
+        var versions = new Map();
+        var pattern = new RegExp("^" + prefix + "(\\d*)\\.pdf$", "i");
+        entries.forEach(function (entry) {
+          if (!entry || entry.type !== "file" || !entry.name) return;
+          var match = entry.name.match(pattern);
+          if (!match) return;
+          var version = match[1] ? Number(match[1]) : 0;
+          if (!Number.isFinite(version)) return;
+          var existing = versions.get(version);
+          if (!existing || entry.name === entry.name.toLocaleLowerCase("cs-CZ")) versions.set(version, entry.name);
+        });
+        return versions;
+      }
+
+      async function discoverScheduleFiles() {
+        var fallback = { friday: "patek.pdf", saturday: "sobota.pdf", version: 0 };
+        try {
+          var apiUrl = "https://api.github.com/repos/k5jhfy8j9p-eng/jj-racing-life/contents/?v=" + Date.now();
+          var response = await fetch(apiUrl, { cache: "no-store" });
+          if (!response.ok) return fallback;
+          var entries = await response.json();
+          if (!Array.isArray(entries)) return fallback;
+
+          var fridayVersions = scheduleVersionMap(entries, "patek");
+          var saturdayVersions = scheduleVersionMap(entries, "sobota");
+          var commonVersions = Array.from(fridayVersions.keys()).filter(function (version) {
+            return saturdayVersions.has(version);
+          }).sort(function (a, b) { return b - a; });
+          if (!commonVersions.length) return fallback;
+
+          var latest = commonVersions[0];
+          return {
+            friday: fridayVersions.get(latest),
+            saturday: saturdayVersions.get(latest),
+            version: latest
+          };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
       async function loadRemoteSchedules() {
         if (remoteLoading) return;
         remoteLoading = true;
@@ -1180,9 +1223,10 @@
         elements.reloadPdf.textContent = "Načítám…";
         renderPdfStatus(true);
 
+        var discoveredFiles = await discoverScheduleFiles();
         var jobs = [
-          { day: "friday", file: "patek.pdf" },
-          { day: "saturday", file: "sobota.pdf" }
+          { day: "friday", file: discoveredFiles.friday },
+          { day: "saturday", file: discoveredFiles.saturday }
         ];
         var results = await Promise.allSettled(jobs.map(function (job) { return loadPdfDay(job.day, job.file); }));
 
