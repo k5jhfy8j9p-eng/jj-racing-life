@@ -517,7 +517,7 @@
     }
 
     #karting-program-app .kp-alfano-head-copy { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
-    #karting-program-app .kp-alfano-metrics { display: grid; grid-template-columns: repeat(4, minmax(78px, 1fr)); gap: 8px; }
+    #karting-program-app .kp-alfano-metrics { display: grid; grid-template-columns: repeat(5, minmax(72px, 1fr)); gap: 8px; }
     #karting-program-app .kp-alfano-stat { min-width: 0; padding: 8px 10px; border-radius: 10px; background: var(--muted); }
     #karting-program-app .kp-alfano-stat span { display: block; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #karting-program-app .kp-alfano-stat strong { display: block; margin-top: 3px; font-size: clamp(1.1rem, 1.7vw, 1.85rem); line-height: 1; font-variant-numeric: tabular-nums; }
@@ -701,6 +701,7 @@
         <div class="kp-alfano-stat"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></div>
         <div class="kp-alfano-stat"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></div>
         <div class="kp-alfano-stat"><span>Teoretické kolo</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">3 GPS sektory</small></div>
+        <div class="kp-alfano-stat"><span>Celkem kol</span><strong id="kp-alfano-total-laps">—</strong><small id="kp-alfano-total-laps-note">0 tréninků</small></div>
       </div>
       <div class="kp-alfano-chart-wrap">
         <span class="kp-subtle">Nejlepší kolo jednotlivých tréninků</span>
@@ -911,6 +912,8 @@
         alfanoConsistencyNote: root.querySelector("#kp-alfano-consistency-note"),
         alfanoLaps: root.querySelector("#kp-alfano-laps"),
         alfanoLapsNote: root.querySelector("#kp-alfano-laps-note"),
+        alfanoTotalLaps: root.querySelector("#kp-alfano-total-laps"),
+        alfanoTotalLapsNote: root.querySelector("#kp-alfano-total-laps-note"),
         alfanoChart: root.querySelector("#kp-alfano-chart"),
         alfanoEmpty: root.querySelector("#kp-alfano-empty"),
         minus: root.querySelector("#kp-delay-minus"),
@@ -1720,15 +1723,18 @@
           elements.alfanoLatest.textContent = "—";
           elements.alfanoConsistency.textContent = "—";
           elements.alfanoLaps.textContent = "—";
+          elements.alfanoTotalLaps.textContent = "—";
           elements.alfanoBestNote.textContent = "rekord tratě";
           elements.alfanoLatestNote.textContent = "zatím bez dat";
           elements.alfanoConsistencyNote.textContent = "kola do +0,5 s";
           elements.alfanoLapsNote.textContent = "3 GPS sektory";
+          elements.alfanoTotalLapsNote.textContent = "0 tréninků";
           renderAlfanoChart([]);
           return;
         }
 
         var latest = sorted[sorted.length - 1];
+        var totalLaps = sorted.reduce(function (total, session) { return total + session.laps.length; }, 0);
         var record = alfanoTrackRecords[trackRecordKey(latest.track)] || { bestMs: latest.bestMs, bestLap: latest.bestLap, track: latest.track };
         var sectorProfile = alfanoSectorProfiles[trackRecordKey(latest.track)];
         var latestDelta = latest.bestMs - record.bestMs;
@@ -1743,6 +1749,8 @@
         elements.alfanoConsistencyNote.textContent = consistency.total >= 3 ? consistency.count + " z " + consistency.total + " kol do +0,5 s" : "málo měřených kol";
         elements.alfanoLaps.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? formatLapTime(sectorProfile.theoreticalMs) : "—";
         elements.alfanoLapsNote.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? "−" + formatLapTime(Math.max(0, record.bestMs - sectorProfile.theoreticalMs)) + " s potenciál · GPS" : "nahraj ZIPy znovu pro GPS";
+        elements.alfanoTotalLaps.textContent = String(totalLaps);
+        elements.alfanoTotalLapsNote.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků");
         renderAlfanoChart(sorted);
       }
 
