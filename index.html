@@ -548,6 +548,12 @@
     #karting-program-app #kp-ideal-map-dialog { width: min(1180px, calc(100% - 24px)); max-height: calc(100dvh - 24px); }
     #karting-program-app #kp-ideal-map-dialog .kp-dialog-body { min-height: min(860px, calc(100dvh - 28px)); grid-template-rows: auto auto minmax(480px, 1fr) auto; }
     #karting-program-app #kp-ideal-map-dialog .kp-ideal-map { min-height: min(68dvh, 680px); }
+    #karting-program-app .kp-lap-list { display: grid; gap: 7px; max-height: min(68dvh, 620px); overflow: auto; padding-right: 4px; }
+    #karting-program-app .kp-lap-row { display: grid; grid-template-columns: 72px 110px 90px minmax(120px, 1fr); align-items: center; gap: 12px; padding: 9px 11px; border-radius: 9px; background: var(--muted); font-variant-numeric: tabular-nums; }
+    #karting-program-app .kp-lap-row.is-best { box-shadow: inset 4px 0 0 var(--primary); }
+    #karting-program-app .kp-lap-delta { color: var(--muted-foreground); }
+    #karting-program-app .kp-lap-bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+    #karting-program-app .kp-lap-bar span { display: block; height: 100%; border-radius: inherit; background: var(--viz-series-2); }
     #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(120px, 1fr); gap: 6px; }
     #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 120px; overflow: visible; color: var(--foreground); }
     #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 120px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
@@ -728,7 +734,7 @@
       <div class="kp-alfano-metrics">
         <div class="kp-alfano-stat"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></div>
         <div class="kp-alfano-stat"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></div>
-        <div class="kp-alfano-stat"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></div>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-consistency" title="Zobrazit časy jednotlivých kol"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-ideal-map" title="Zobrazit ideální GPS stopu"><span>Ideální kolo</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">3 GPS sektory</small></button>
         <div class="kp-alfano-stat"><span>Celkem kol</span><strong id="kp-alfano-total-laps">—</strong><small id="kp-alfano-total-laps-note">0 tréninků</small></div>
       </div>
@@ -813,6 +819,16 @@
       <div class="kp-chart-empty" id="kp-ideal-map-empty">Pro zobrazení stopy nahraj Alfano ZIPy znovu.</div>
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
       <div class="kp-map-details" id="kp-ideal-map-details"></div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-consistency-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div><h2>Časy jednotlivých kol</h2><p class="kp-dialog-copy" id="kp-consistency-copy">Detail posledního tréninku.</p></div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div class="kp-lap-list" id="kp-lap-list"></div>
     </div>
   </dialog>
 
@@ -970,6 +986,10 @@
         alfanoLatestNote: root.querySelector("#kp-alfano-latest-note"),
         alfanoConsistency: root.querySelector("#kp-alfano-consistency"),
         alfanoConsistencyNote: root.querySelector("#kp-alfano-consistency-note"),
+        openConsistency: root.querySelector("#kp-open-consistency"),
+        consistencyDialog: root.querySelector("#kp-consistency-dialog"),
+        consistencyCopy: root.querySelector("#kp-consistency-copy"),
+        lapList: root.querySelector("#kp-lap-list"),
         alfanoLaps: root.querySelector("#kp-alfano-laps"),
         alfanoLapsNote: root.querySelector("#kp-alfano-laps-note"),
         openIdealMap: root.querySelector("#kp-open-ideal-map"),
@@ -1608,6 +1628,26 @@
           total: cleanLaps.length,
           percent: cleanLaps.length ? Math.round(consistentLaps.length / cleanLaps.length * 100) : 0
         };
+      }
+
+      function renderConsistencyDetail() {
+        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        var latest = sorted[sorted.length - 1];
+        elements.lapList.innerHTML = "";
+        if (!latest) {
+          elements.consistencyCopy.textContent = "Nejdřív nahraj data z Alfana.";
+          return;
+        }
+        var clean = latest.laps.filter(function (lap) { return Number.isFinite(lap.ms); });
+        elements.consistencyCopy.textContent = latest.track + " · trénink " + latest.time + " · nejlepší " + formatLapTime(latest.bestMs) + " s";
+        clean.forEach(function (lap) {
+          var delta = lap.ms - latest.bestMs;
+          var row = document.createElement("div");
+          row.className = "kp-lap-row" + (delta === 0 ? " is-best" : "");
+          var quality = Math.max(3, 100 - Math.max(0, delta) / 30);
+          row.innerHTML = "<strong>Kolo " + lap.lap + "</strong><strong>" + formatLapTime(lap.ms) + " s</strong><span class='kp-lap-delta'>" + (delta === 0 ? "NEJLEPŠÍ" : "+" + formatLapTime(delta) + " s") + "</span><span class='kp-lap-bar'><span style='width:" + quality.toFixed(0) + "%'></span></span>";
+          elements.lapList.appendChild(row);
+        });
       }
 
       function parseAlfanoTimestamp(dateText, timeText) {
@@ -2307,6 +2347,10 @@
       elements.openIdealMap.addEventListener("click", function () {
         renderIdealMap();
         if (typeof elements.idealMapDialog.showModal === "function") elements.idealMapDialog.showModal();
+      });
+      elements.openConsistency.addEventListener("click", function () {
+        renderConsistencyDetail();
+        if (typeof elements.consistencyDialog.showModal === "function") elements.consistencyDialog.showModal();
       });
       elements.importAlfano.addEventListener("click", importAlfanoFiles);
       elements.exportBackup.addEventListener("click", exportAlfanoBackup);
