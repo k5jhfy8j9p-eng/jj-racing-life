@@ -796,6 +796,7 @@
       };
       var pdfLibraryPromise = null;
       var remoteLoading = false;
+      var pdfCheckCompleted = false;
       var fflateLibraryPromise = null;
       var alfanoSessions = [];
 
@@ -1146,18 +1147,23 @@
 
         if (currentDays.length === 2) {
           confirmation.classList.add(changed ? "is-new" : "is-success");
-          confirmation.textContent = (changed ? "✓ NOVÝ VÍKEND NAČTEN" : "✓ PDF OVĚŘENO – beze změny") +
-            " · " + scheduleMeta.friday.fileName + ": " + schedules.friday.length + " položek" +
-            " · " + scheduleMeta.saturday.fileName + ": " + schedules.saturday.length + " položek" +
+          confirmation.textContent = "✓ AKTIVNÍ ROZPIS · " + scheduleMeta.friday.fileName + " + " + scheduleMeta.saturday.fileName +
+            " · Pátek " + schedules.friday.length + " položek" +
+            " · Sobota " + schedules.saturday.length + " položek" +
             (lastLoaded ? " · kontrola " + formatPdfMoment(lastLoaded) : "");
+          return;
+        }
+
+        if (!pdfCheckCompleted && cachedDays.length === 0) {
+          confirmation.textContent = "⏳ Zjišťuji aktuální verzi rozpisu…";
           return;
         }
 
         confirmation.classList.add("is-warning");
         if (cachedDays.length) {
-          confirmation.textContent = "⚠ PDF se nepodařilo celé ověřit · používám poslední uložený rozpis. Podrobnosti jsou v Nový víkend.";
+          confirmation.textContent = "⚠ AKTIVNÍ POSLEDNÍ FUNKČNÍ ROZPIS · " + scheduleMeta.friday.fileName + " + " + scheduleMeta.saturday.fileName + " · nové PDF se nepodařilo ověřit.";
         } else {
-          confirmation.textContent = "⚠ Používám výchozí rozpis · nové PDF zatím nebylo potvrzeno.";
+          confirmation.textContent = "⚠ PDF se nepodařilo načíst · dočasně zobrazuji výchozí rozpis. Podrobnosti jsou v Nový víkend.";
         }
       }
 
@@ -1239,6 +1245,7 @@
         elements.reloadPdf.disabled = false;
         elements.reloadPdf.textContent = "Ověřit a načíst PDF";
         remoteLoading = false;
+        pdfCheckCompleted = true;
         renderPdfStatus(false);
         render();
       }
