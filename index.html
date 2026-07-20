@@ -700,7 +700,7 @@
         <div class="kp-alfano-stat"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></div>
         <div class="kp-alfano-stat"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></div>
         <div class="kp-alfano-stat"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></div>
-        <div class="kp-alfano-stat"><span>Celkem kol</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">0 tréninků</small></div>
+        <div class="kp-alfano-stat"><span>Teoretické kolo</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">3 GPS sektory</small></div>
       </div>
       <div class="kp-alfano-chart-wrap">
         <span class="kp-subtle">Nejlepší kolo jednotlivých tréninků</span>
@@ -860,6 +860,7 @@
       var fflateLibraryPromise = null;
       var alfanoSessions = [];
       var alfanoTrackRecords = {};
+      var alfanoSectorProfiles = {};
 
       function loadSetting(key) {
         try { return localStorage.getItem(key); } catch (error) { return null; }
@@ -1422,6 +1423,19 @@
         saveSetting("karting-alfano-track-records", JSON.stringify(alfanoTrackRecords));
       }
 
+      function restoreAlfanoSectorProfiles() {
+        var saved = loadSetting("karting-alfano-sector-profiles");
+        if (!saved) return;
+        try {
+          var parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) alfanoSectorProfiles = parsed;
+        } catch (error) { /* Poškozenou uloženou kopii ignorujeme. */ }
+      }
+
+      function saveAlfanoSectorProfiles() {
+        saveSetting("karting-alfano-sector-profiles", JSON.stringify(alfanoSectorProfiles));
+      }
+
       function updateAlfanoTrackRecords(sessions) {
         var changed = false;
         sessions.filter(alfanoSessionIsValid).forEach(function (session) {
@@ -1502,6 +1516,106 @@
         };
       }
 
+      function parseAlfanoGpsLap(csvText) {
+        var lines = csvText.replace(/^\uFEFF/, "").split(/\r?\n/).filter(function (line) { return line.trim(); });
+        if (lines.length < 3) return [];
+        var headers = lines[0].split(",").map(function (value) { return value.trim(); });
+        var latIndex = headers.indexOf("Lat.");
+        var lonIndex = headers.indexOf("Lon.");
+        if (latIndex < 0 || lonIndex < 0) return [];
+        return lines.slice(1).map(function (line) {
+          var columns = line.split(",");
+          var lat = Number(columns[latIndex]);
+          var lon = Number(columns[lonIndex]);
+          if (Math.abs(lat) > 90) lat /= 1000000;
+          if (Math.abs(lon) > 180) lon /= 1000000;
+          return Number.isFinite(lat) && Number.isFinite(lon) && lat && lon ? [lat, lon] : null;
+        }).filter(Boolean);
+      }
+
+      function gpsDistance(a, b) {
+        var latitude = (a[0] + b[0]) * Math.PI / 360;
+        var x = (b[1] - a[1]) * 111320 * Math.cos(latitude);
+        var y = (b[0] - a[0]) * 111320;
+        return Math.sqrt(x * x + y * y);
+      }
+
+      function gpsGateAtFraction(points, fraction) {
+        var distances = [0];
+        for (var i = 1; i < points.length; i += 1) distances.push(distances[i - 1] + gpsDistance(points[i - 1], points[i]));
+        var target = distances[distances.length - 1] * fraction;
+        var index = 0;
+        while (index + 1 < distances.length && distances[index + 1] < target) index += 1;
+        var segment = Math.max(0.001, distances[index + 1] - distances[index]);
+        var part = Math.max(0, Math.min(1, (target - distances[index]) / segment));
+        return [points[index][0] + (points[index + 1][0] - points[index][0]) * part, points[index][1] + (points[index + 1][1] - points[index][1]) * part];
+      }
+
+      function nearestGpsGate(points, gate, low, high) {
+        var start = Math.max(0, Math.floor((points.length - 1) * low));
+        var end = Math.min(points.length - 1, Math.ceil((points.length - 1) * high));
+        var latitude = gate[0] * Math.PI / 180;
+        var scaleX = 111320 * Math.cos(latitude);
+        var best = null;
+        for (var i = start; i < end; i += 1) {
+          var ax = (points[i][1] - gate[1]) * scaleX;
+          var ay = (points[i][0] - gate[0]) * 111320;
+          var bx = (points[i + 1][1] - gate[1]) * scaleX;
+          var by = (points[i + 1][0] - gate[0]) * 111320;
+          var vx = bx - ax;
+          var vy = by - ay;
+          var denominator = vx * vx + vy * vy;
+          var part = denominator ? Math.max(0, Math.min(1, -(ax * vx + ay * vy) / denominator)) : 0;
+          var dx = ax + part * vx;
+          var dy = ay + part * vy;
+          var distance = Math.sqrt(dx * dx + dy * dy);
+          if (!best || distance < best.distance) best = { position: i + part, distance: distance };
+        }
+        return best;
+      }
+
+      function applyVirtualSectors(sessions) {
+        var changed = false;
+        var groups = {};
+        sessions.forEach(function (session) {
+          if (!Array.isArray(session.gpsLaps) || !session.gpsLaps.length) return;
+          var key = trackRecordKey(session.track);
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(session);
+        });
+        Object.keys(groups).forEach(function (key) {
+          var candidates = groups[key].flatMap(function (session) {
+            return session.gpsLaps.map(function (lap) { return { session: session, lap: lap }; });
+          }).filter(function (item) { return item.lap.points.length > 100 && item.lap.ms <= item.session.bestMs + 5000; });
+          if (!candidates.length) return;
+          var reference = candidates.reduce(function (best, item) { return item.lap.ms < best.lap.ms ? item : best; }, candidates[0]);
+          var profile = alfanoSectorProfiles[key];
+          if (!profile || !Array.isArray(profile.gates) || profile.gates.length !== 2) {
+            profile = { track: reference.session.track, gates: [gpsGateAtFraction(reference.lap.points, 1 / 3), gpsGateAtFraction(reference.lap.points, 2 / 3)], bestSectors: [null, null, null] };
+          }
+          candidates.forEach(function (item) {
+            var first = nearestGpsGate(item.lap.points, profile.gates[0], 0.15, 0.55);
+            var second = nearestGpsGate(item.lap.points, profile.gates[1], 0.45, 0.85);
+            if (!first || !second || first.distance > 8 || second.distance > 8 || first.position >= second.position) return;
+            var last = item.lap.points.length - 1;
+            var firstMs = item.lap.ms * first.position / last;
+            var secondMs = item.lap.ms * second.position / last;
+            var sectors = [firstMs, secondMs - firstMs, item.lap.ms - secondMs];
+            item.session.virtualSectors = (item.session.virtualSectors || []).concat([sectors]);
+            sectors.forEach(function (value, index) {
+              if (!Number.isFinite(profile.bestSectors[index]) || value < profile.bestSectors[index]) profile.bestSectors[index] = value;
+            });
+          });
+          if (profile.bestSectors.every(Number.isFinite)) {
+            profile.theoreticalMs = Math.round(profile.bestSectors.reduce(function (sum, value) { return sum + value; }, 0));
+            alfanoSectorProfiles[key] = profile;
+            changed = true;
+          }
+        });
+        sessions.forEach(function (session) { delete session.gpsLaps; });
+        if (changed) saveAlfanoSectorProfiles();
+      }
+
       async function parseAlfanoZip(file) {
         if (!/\.zip$/i.test(file.name)) throw new Error(file.name + ": soubor není ZIP.");
         var fflate = await getFflateLibrary();
@@ -1511,7 +1625,19 @@
           return /^SN\d+_.*\.csv$/i.test(baseName) && !/^LAP_/i.test(baseName);
         });
         if (!summaryName) throw new Error(file.name + ": chybí souhrnný CSV soubor.");
-        return parseAlfanoSummary(file.name, fflate.strFromU8(entries[summaryName]));
+        var session = parseAlfanoSummary(file.name, fflate.strFromU8(entries[summaryName]));
+        session.gpsLaps = [];
+        Object.keys(entries).forEach(function (name) {
+          var baseName = name.split("/").pop();
+          var match = /^LAP_(\d+)_.*\.csv$/i.exec(baseName);
+          if (!match) return;
+          var lapNumber = Number(match[1]);
+          var summaryLap = session.laps.find(function (lap) { return lap.lap === lapNumber; });
+          if (!summaryLap) return;
+          var points = parseAlfanoGpsLap(fflate.strFromU8(entries[name]));
+          if (points.length > 100) session.gpsLaps.push({ lap: lapNumber, ms: summaryLap.ms, points: points });
+        });
+        return session;
       }
 
       function formatLapTime(milliseconds) {
@@ -1597,14 +1723,14 @@
           elements.alfanoBestNote.textContent = "rekord tratě";
           elements.alfanoLatestNote.textContent = "zatím bez dat";
           elements.alfanoConsistencyNote.textContent = "kola do +0,5 s";
-          elements.alfanoLapsNote.textContent = "0 tréninků";
+          elements.alfanoLapsNote.textContent = "3 GPS sektory";
           renderAlfanoChart([]);
           return;
         }
 
         var latest = sorted[sorted.length - 1];
-        var totalLaps = sorted.reduce(function (total, session) { return total + session.laps.length; }, 0);
         var record = alfanoTrackRecords[trackRecordKey(latest.track)] || { bestMs: latest.bestMs, bestLap: latest.bestLap, track: latest.track };
+        var sectorProfile = alfanoSectorProfiles[trackRecordKey(latest.track)];
         var latestDelta = latest.bestMs - record.bestMs;
         var consistency = calculateConsistency(latest);
 
@@ -1615,8 +1741,8 @@
         elements.alfanoLatestNote.textContent = latestDelta === 0 ? "OSOBNÍ REKORD" : "+" + formatLapTime(latestDelta) + " s k rekordu";
         elements.alfanoConsistency.textContent = consistency.total >= 3 ? consistency.percent + " %" : "—";
         elements.alfanoConsistencyNote.textContent = consistency.total >= 3 ? consistency.count + " z " + consistency.total + " kol do +0,5 s" : "málo měřených kol";
-        elements.alfanoLaps.textContent = String(totalLaps);
-        elements.alfanoLapsNote.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků");
+        elements.alfanoLaps.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? formatLapTime(sectorProfile.theoreticalMs) : "—";
+        elements.alfanoLapsNote.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? "−" + formatLapTime(Math.max(0, record.bestMs - sectorProfile.theoreticalMs)) + " s potenciál · GPS" : "nahraj ZIPy znovu pro GPS";
         renderAlfanoChart(sorted);
       }
 
@@ -1635,13 +1761,14 @@
 
         try {
           var imported = await Promise.all(files.map(parseAlfanoZip));
+          applyVirtualSectors(imported);
           var byFileName = new Map(alfanoSessions.map(function (session) { return [session.fileName, session]; }));
           imported.forEach(function (session) { byFileName.set(session.fileName, session); });
           alfanoSessions = Array.from(byFileName.values());
           saveAlfanoSessions();
           updateAlfanoTrackRecords(imported);
           renderAlfano();
-          elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink." : " tréninky.");
+          elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink" : " tréninky") + " včetně GPS sektorů.";
           elements.alfanoFiles.value = "";
         } catch (error) {
           elements.alfanoMessage.textContent = error && error.message ? error.message : "ZIP se nepodařilo načíst.";
@@ -1954,6 +2081,7 @@
       restoreCachedSchedules();
       restoreAlfanoSessions();
       restoreAlfanoTrackRecords();
+      restoreAlfanoSectorProfiles();
       updateAlfanoTrackRecords(alfanoSessions);
       renderPdfStatus(false);
       renderAlfano();
