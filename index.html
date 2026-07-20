@@ -559,6 +559,10 @@
     #karting-program-app .kp-record-item:first-child { border-left-color: var(--primary); }
     #karting-program-app .kp-record-item span, #karting-program-app .kp-record-item small { display: block; color: var(--muted-foreground); }
     #karting-program-app .kp-record-item strong { display: block; margin: 4px 0; font-size: 1.45rem; font-variant-numeric: tabular-nums; }
+    #karting-program-app .kp-report-chart { width: 100%; min-height: 230px; border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,.18); }
+    #karting-program-app .kp-report-verdict { padding: 13px 15px; border-left: 4px solid var(--primary); border-radius: 9px; background: color-mix(in srgb, var(--primary) 8%, var(--muted)); font-weight: 650; }
+    #karting-program-app .kp-track-list { display: grid; gap: 8px; }
+    #karting-program-app .kp-track-row { display: grid; grid-template-columns: minmax(110px, 1fr) 90px 2fr; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px; background: var(--muted); }
     #karting-program-app .kp-alfano-chart-wrap { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(120px, 1fr); gap: 6px; }
     #karting-program-app .kp-alfano-chart-wrap svg { display: block; width: 100%; height: 100%; min-height: 120px; overflow: visible; color: var(--foreground); }
     #karting-program-app .kp-chart-empty { display: grid; place-items: center; height: 100%; min-height: 120px; color: var(--muted-foreground); border: 1px dashed var(--border); border-radius: 10px; }
@@ -738,10 +742,10 @@
       </div>
       <div class="kp-alfano-metrics">
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-records" title="Zobrazit síň rekordů"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></button>
-        <div class="kp-alfano-stat"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></div>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-latest" title="Zobrazit report posledního tréninku"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-consistency" title="Zobrazit časy jednotlivých kol"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-ideal-map" title="Zobrazit ideální GPS stopu"><span>Ideální kolo</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">3 GPS sektory</small></button>
-        <div class="kp-alfano-stat"><span>Celkem kol</span><strong id="kp-alfano-total-laps">—</strong><small id="kp-alfano-total-laps-note">0 tréninků</small></div>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-mileage" title="Zobrazit přehled nájezdu"><span>Celkem kol</span><strong id="kp-alfano-total-laps">—</strong><small id="kp-alfano-total-laps-note">0 tréninků</small></button>
       </div>
       <div class="kp-alfano-chart-wrap">
         <span class="kp-subtle">Nejlepší kolo jednotlivých tréninků</span>
@@ -845,6 +849,29 @@
       </div>
       <div class="kp-record-grid" id="kp-record-grid"></div>
       <div class="kp-map-details" id="kp-records-history"></div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-latest-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div><h2>Report posledního tréninku</h2><p class="kp-dialog-copy" id="kp-latest-copy"></p></div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div class="kp-record-grid" id="kp-latest-grid"></div>
+      <svg class="kp-report-chart" id="kp-latest-chart" viewBox="0 0 760 240" role="img" aria-label="Časy kol posledního tréninku"></svg>
+      <div class="kp-report-verdict" id="kp-latest-verdict"></div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-mileage-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div><h2>Přehled nájezdu</h2><p class="kp-dialog-copy" id="kp-mileage-copy"></p></div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div class="kp-record-grid" id="kp-mileage-grid"></div>
+      <div class="kp-track-list" id="kp-track-list"></div>
     </div>
   </dialog>
 
@@ -1005,6 +1032,12 @@
         recordsHistory: root.querySelector("#kp-records-history"),
         alfanoLatest: root.querySelector("#kp-alfano-latest"),
         alfanoLatestNote: root.querySelector("#kp-alfano-latest-note"),
+        openLatest: root.querySelector("#kp-open-latest"),
+        latestDialog: root.querySelector("#kp-latest-dialog"),
+        latestCopy: root.querySelector("#kp-latest-copy"),
+        latestGrid: root.querySelector("#kp-latest-grid"),
+        latestChart: root.querySelector("#kp-latest-chart"),
+        latestVerdict: root.querySelector("#kp-latest-verdict"),
         alfanoConsistency: root.querySelector("#kp-alfano-consistency"),
         alfanoConsistencyNote: root.querySelector("#kp-alfano-consistency-note"),
         openConsistency: root.querySelector("#kp-open-consistency"),
@@ -1021,6 +1054,11 @@
         idealMapDetails: root.querySelector("#kp-ideal-map-details"),
         alfanoTotalLaps: root.querySelector("#kp-alfano-total-laps"),
         alfanoTotalLapsNote: root.querySelector("#kp-alfano-total-laps-note"),
+        openMileage: root.querySelector("#kp-open-mileage"),
+        mileageDialog: root.querySelector("#kp-mileage-dialog"),
+        mileageCopy: root.querySelector("#kp-mileage-copy"),
+        mileageGrid: root.querySelector("#kp-mileage-grid"),
+        trackList: root.querySelector("#kp-track-list"),
         alfanoChart: root.querySelector("#kp-alfano-chart"),
         alfanoEmpty: root.querySelector("#kp-alfano-empty"),
         minus: root.querySelector("#kp-delay-minus"),
@@ -1713,6 +1751,90 @@
           elements.recordGrid.appendChild(item);
         });
         elements.recordsHistory.textContent = "Celá historie: " + sorted.length + " tréninků · " + allLaps + " kol · " + new Set(sorted.map(function (session) { return trackRecordKey(session.track); })).size + " tratí";
+      }
+
+      function appendRecordItem(container, label, value, note) {
+        var item = document.createElement("div");
+        item.className = "kp-record-item";
+        item.innerHTML = "<span>" + label + "</span><strong>" + value + "</strong><small>" + note + "</small>";
+        container.appendChild(item);
+      }
+
+      function averageMs(laps) {
+        return laps.length ? laps.reduce(function (sum, lap) { return sum + lap.ms; }, 0) / laps.length : Infinity;
+      }
+
+      function renderLatestReport() {
+        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        var latest = sorted[sorted.length - 1];
+        elements.latestGrid.innerHTML = "";
+        elements.latestChart.innerHTML = "";
+        if (!latest) return;
+        var valid = latest.laps.filter(function (lap) { return lap.ms >= latest.bestMs && lap.ms <= latest.bestMs + 5000; });
+        var fastestThree = valid.slice().sort(function (a, b) { return a.ms - b.ms; }).slice(0, 3);
+        var middle = Math.ceil(valid.length / 2);
+        var firstAverage = averageMs(valid.slice(0, middle));
+        var secondAverage = averageMs(valid.slice(middle));
+        var change = secondAverage - firstAverage;
+        elements.latestCopy.textContent = latest.track + " · " + latest.date + " · " + latest.time + " · " + latest.laps.length + " kol";
+        appendRecordItem(elements.latestGrid, "Nejlepší kolo", formatLapTime(latest.bestMs) + " s", "kolo " + latest.bestLap);
+        appendRecordItem(elements.latestGrid, "Průměr platných kol", formatLapTime(averageMs(valid)) + " s", valid.length + " započítaných kol");
+        appendRecordItem(elements.latestGrid, "Tři nejrychlejší kola", fastestThree.map(function (lap) { return formatLapTime(lap.ms); }).join(" · "), fastestThree.map(function (lap) { return "kolo " + lap.lap; }).join(" · "));
+        appendRecordItem(elements.latestGrid, "Nejvyšší rychlost", Number(latest.maxSpeed || 0).toFixed(1).replace(".", ",") + " km/h", "v tomto tréninku");
+        var width = 760, height = 240, left = 42, right = 22, top = 24, bottom = 34;
+        var min = Math.min.apply(null, valid.map(function (lap) { return lap.ms; }));
+        var max = Math.max.apply(null, valid.map(function (lap) { return lap.ms; }));
+        var range = Math.max(500, max - min);
+        var points = valid.map(function (lap, index) {
+          return { x: valid.length === 1 ? width / 2 : left + index * (width - left - right) / (valid.length - 1), y: top + (lap.ms - min) / range * (height - top - bottom), lap: lap };
+        });
+        elements.latestChart.appendChild(createSvgElement("polyline", { points: points.map(function (point) { return point.x + "," + point.y; }).join(" "), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "3", "stroke-linejoin": "round" }));
+        points.forEach(function (point) {
+          elements.latestChart.appendChild(createSvgElement("circle", { cx: point.x, cy: point.y, r: point.lap.ms === latest.bestMs ? "6" : "4", fill: point.lap.ms === latest.bestMs ? "var(--primary)" : "var(--viz-series-2)" }));
+          elements.latestChart.appendChild(createSvgElement("text", { x: point.x, y: height - 10, "text-anchor": "middle", fill: "var(--muted-foreground)", "font-size": "11" }, String(point.lap.lap)));
+        });
+        if (!Number.isFinite(change)) elements.latestVerdict.textContent = "Pro hodnocení vývoje tempa je potřeba více platných kol.";
+        else if (change < -100) elements.latestVerdict.textContent = "Silný závěr: druhá polovina tréninku byla v průměru o " + formatLapTime(Math.abs(change)) + " s rychlejší.";
+        else if (change > 100) elements.latestVerdict.textContent = "Tempo v závěru kleslo: druhá polovina byla v průměru o " + formatLapTime(change) + " s pomalejší.";
+        else elements.latestVerdict.textContent = "Vyrovnaný trénink: rozdíl průměrného tempa obou polovin byl pouze " + formatLapTime(Math.abs(change)) + " s.";
+      }
+
+      function gpsPathDistance(points) {
+        var distance = 0;
+        for (var i = 1; i < points.length; i += 1) distance += gpsDistance(points[i - 1], points[i]);
+        return distance;
+      }
+
+      function renderMileageDetail() {
+        var sorted = alfanoSessions.filter(alfanoSessionIsValid);
+        elements.mileageGrid.innerHTML = "";
+        elements.trackList.innerHTML = "";
+        if (!sorted.length) return;
+        var byTrack = {};
+        var gpsMeters = 0;
+        sorted.forEach(function (session) {
+          var key = trackRecordKey(session.track);
+          if (!byTrack[key]) byTrack[key] = { name: session.track, sessions: 0, laps: 0 };
+          byTrack[key].sessions += 1;
+          byTrack[key].laps += session.laps.length;
+          (session.gpsLaps || []).forEach(function (lap) { if (Array.isArray(lap.points)) gpsMeters += gpsPathDistance(lap.points); });
+        });
+        var totalLaps = sorted.reduce(function (sum, session) { return sum + session.laps.length; }, 0);
+        var longest = sorted.slice().sort(function (a, b) { return b.laps.length - a.laps.length; })[0];
+        var trackValues = Object.keys(byTrack).map(function (key) { return byTrack[key]; }).sort(function (a, b) { return b.laps - a.laps; });
+        elements.mileageCopy.textContent = "Souhrn všech uložených Alfano tréninků";
+        appendRecordItem(elements.mileageGrid, "Celkem kol", String(totalLaps), sorted.length + " tréninků");
+        appendRecordItem(elements.mileageGrid, "Počet tratí", String(trackValues.length), trackValues.map(function (track) { return track.name; }).join(" · "));
+        appendRecordItem(elements.mileageGrid, "Nejdelší trénink", longest.laps.length + " kol", longest.track + " · " + longest.time);
+        appendRecordItem(elements.mileageGrid, "Průměr kol na trénink", (totalLaps / sorted.length).toFixed(1).replace(".", ","), "ze všech uložených jízd");
+        appendRecordItem(elements.mileageGrid, "Orientační vzdálenost", gpsMeters ? (gpsMeters / 1000).toFixed(1).replace(".", ",") + " km" : "—", "součet kol s dostupnou GPS");
+        var maximum = Math.max.apply(null, trackValues.map(function (track) { return track.laps; }));
+        trackValues.forEach(function (track) {
+          var row = document.createElement("div");
+          row.className = "kp-track-row";
+          row.innerHTML = "<strong>" + track.name + "</strong><span>" + track.laps + " kol</span><span class='kp-lap-bar'><span style='width:" + (track.laps / maximum * 100).toFixed(0) + "%'></span></span>";
+          elements.trackList.appendChild(row);
+        });
       }
 
       function parseAlfanoTimestamp(dateText, timeText) {
@@ -2420,6 +2542,14 @@
       elements.openRecords.addEventListener("click", function () {
         renderRecordsDetail();
         if (typeof elements.recordsDialog.showModal === "function") elements.recordsDialog.showModal();
+      });
+      elements.openLatest.addEventListener("click", function () {
+        renderLatestReport();
+        if (typeof elements.latestDialog.showModal === "function") elements.latestDialog.showModal();
+      });
+      elements.openMileage.addEventListener("click", function () {
+        renderMileageDetail();
+        if (typeof elements.mileageDialog.showModal === "function") elements.mileageDialog.showModal();
       });
       elements.importAlfano.addEventListener("click", importAlfanoFiles);
       elements.exportBackup.addEventListener("click", exportAlfanoBackup);
