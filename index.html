@@ -1458,6 +1458,7 @@
       }
 
       function formatBackupDate(value) {
+        if (!value) return "Záloha zatím nebyla stažena";
         var date = new Date(value);
         if (!Number.isFinite(date.getTime())) return "Záloha zatím nebyla stažena";
         return "Poslední záloha: " + date.toLocaleDateString("cs-CZ") + " " + date.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
