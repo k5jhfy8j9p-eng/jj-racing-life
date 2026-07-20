@@ -1768,7 +1768,7 @@
           saveAlfanoSessions();
           updateAlfanoTrackRecords(imported);
           renderAlfano();
-          elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink" : " tréninky") + " včetně GPS sektorů.";
+          elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink" : imported.length < 5 ? " tréninky" : " tréninků") + " včetně GPS sektorů.";
           elements.alfanoFiles.value = "";
         } catch (error) {
           elements.alfanoMessage.textContent = error && error.message ? error.message : "ZIP se nepodařilo načíst.";
