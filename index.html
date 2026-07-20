@@ -131,7 +131,7 @@
     #karting-program-app .kp-shell {
       display: grid;
       grid-template-columns: minmax(280px, .88fr) minmax(420px, 1.38fr) minmax(260px, .78fr);
-      grid-template-rows: auto auto minmax(200px, 1fr) auto minmax(180px, .75fr) auto;
+      grid-template-rows: auto auto minmax(200px, 1fr) auto auto minmax(160px, .72fr) auto;
       gap: var(--kp-gap);
       min-height: 620px;
       max-height: 900px;
@@ -454,6 +454,41 @@
       white-space: nowrap;
     }
 
+    #karting-program-app .kp-support-strip {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: auto repeat(3, minmax(0, 1fr));
+      align-items: stretch;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--viz-series-2);
+      border-radius: 10px;
+      background: linear-gradient(90deg, rgba(0, 143, 232, .08), var(--card) 38%, rgba(255, 212, 0, .035));
+    }
+
+    #karting-program-app .kp-support-heading { align-self: center; padding-right: 4px; white-space: nowrap; }
+    #karting-program-app .kp-support-list { display: contents; }
+
+    #karting-program-app .kp-support-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      padding: 7px 9px;
+      border-radius: 8px;
+      background: var(--muted);
+    }
+
+    #karting-program-app .kp-support-item.is-current {
+      background: color-mix(in srgb, var(--viz-series-2) 22%, var(--muted));
+      box-shadow: inset 3px 0 0 var(--viz-series-2);
+    }
+
+    #karting-program-app .kp-support-time { flex: 0 0 auto; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #karting-program-app .kp-support-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #karting-program-app .kp-support-empty { grid-column: 2 / -1; align-self: center; color: var(--muted-foreground); }
+
     #karting-program-app .kp-footer-note {
       grid-column: 1 / -1;
       color: var(--muted-foreground);
@@ -500,13 +535,16 @@
     @media (max-width: 900px) {
       #karting-program-app .kp-shell {
         grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto auto minmax(230px, 1fr) auto auto auto;
+        grid-template-rows: auto auto minmax(230px, 1fr) auto auto auto auto;
         max-height: none;
       }
       #karting-program-app .kp-primary { grid-column: 1; }
       #karting-program-app .kp-team-card { grid-column: 2; }
       #karting-program-app .kp-next-card { grid-column: 1 / -1; }
       #karting-program-app .kp-session-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      #karting-program-app .kp-support-strip { grid-template-columns: 1fr; }
+      #karting-program-app .kp-support-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      #karting-program-app .kp-support-empty { grid-column: 1 / -1; }
       #karting-program-app .kp-alfano-panel { grid-template-columns: 1fr; }
       #karting-program-app .kp-alfano-head { grid-column: 1; }
       #karting-program-app .kp-alfano-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -518,7 +556,7 @@
 
     @media (min-width: 901px) and (max-height: 850px) {
       #karting-program-app { --kp-gap: 8px; }
-      #karting-program-app .kp-shell { grid-template-rows: auto auto minmax(185px, 1fr) auto minmax(165px, .72fr) auto; }
+      #karting-program-app .kp-shell { grid-template-rows: auto auto minmax(185px, 1fr) auto auto minmax(145px, .68fr) auto; }
       #karting-program-app .kp-topline { min-height: 116px; }
       #karting-program-app .kp-logo-frame { width: 220px; }
       #karting-program-app .kp-alfano-chart-wrap,
@@ -532,6 +570,7 @@
       #karting-program-app .kp-control-stack { display: grid; }
       #karting-program-app .kp-main-grid { display: grid; gap: 10px; }
       #karting-program-app .kp-session-list { grid-template-columns: 1fr 1fr; }
+      #karting-program-app .kp-support-list { grid-template-columns: 1fr; }
       #karting-program-app .kp-session-row { align-items: flex-start; }
       #karting-program-app .kp-tag { display: none; }
       #karting-program-app .kp-brand-copy { display: none; }
@@ -642,6 +681,11 @@
         </label>
       </div>
       <div class="kp-session-list" id="kp-session-list"></div>
+    </section>
+
+    <section class="kp-support-strip" aria-live="polite" aria-label="Doprovodný program">
+      <div class="kp-support-heading kp-eyebrow">Doprovodný program</div>
+      <div class="kp-support-list" id="kp-support-list"></div>
     </section>
 
     <section class="card kp-alfano-panel" aria-live="polite">
@@ -785,9 +829,25 @@
         ]
       };
 
+      var builtInSupportEvents = {
+        friday: [
+          { start: minutes("08:00"), end: minutes("10:00"), title: "Registrace jezdců" },
+          { start: minutes("16:00"), end: minutes("18:00"), title: "Technická přejímka a registrace pneumatik" },
+          { start: minutes("18:30"), end: null, title: "Rozprava jezdců (povinná)" }
+        ],
+        saturday: [
+          { start: minutes("16:20"), end: null, title: "Vyhlášení výsledků" }
+        ]
+      };
+
       var schedules = {
         friday: builtInSchedules.friday.slice(),
         saturday: builtInSchedules.saturday.slice()
+      };
+
+      var supportEvents = {
+        friday: builtInSupportEvents.friday.slice(),
+        saturday: builtInSupportEvents.saturday.slice()
       };
 
       var scheduleMeta = {
@@ -872,6 +932,7 @@
         nextMeta: root.querySelector("#kp-next-meta"),
         prepMinutes: root.querySelector("#kp-prep-minutes"),
         sessionList: root.querySelector("#kp-session-list"),
+        supportList: root.querySelector("#kp-support-list"),
         footer: root.querySelector("#kp-footer-note")
       };
 
@@ -914,6 +975,13 @@
         });
       }
 
+      function supportEventsAreValid(events) {
+        return Array.isArray(events) && events.every(function (event) {
+          return event && Number.isFinite(event.start) && Boolean(event.title) &&
+            (event.end === null || event.end === undefined || (Number.isFinite(event.end) && event.end > event.start));
+        });
+      }
+
       function restoreCachedSchedules() {
         ["friday", "saturday"].forEach(function (day) {
           var saved = loadSetting("karting-pdf-schedule-" + day);
@@ -922,6 +990,7 @@
             var parsed = JSON.parse(saved);
             if (!scheduleIsValid(parsed.sessions)) return;
             schedules[day] = parsed.sessions;
+            if (supportEventsAreValid(parsed.supportEvents)) supportEvents[day] = parsed.supportEvents;
             scheduleMeta[day] = {
               source: "Poslední načtené PDF",
               remote: true,
@@ -1085,6 +1154,43 @@
         return unique;
       }
 
+      function parseSupportEvents(lines) {
+        var events = [];
+        var keyword = /REGISTRAC|PŘEJÍMK|PREJIMK|PNEUMATIK|ROZPRAV|VYHLÁŠEN|VYHLASEN/i;
+
+        lines.forEach(function (line) {
+          var range = line.match(/(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})\s*(?:\|\s*)?(.+)/);
+          var single = line.match(/(\d{1,2}:\d{2})\s*(?:\||[–—-])\s*(.+)/);
+          var title = range ? range[3].trim() : single ? single[2].trim() : "";
+
+          if ((range || single) && keyword.test(title)) {
+            events.push({
+              start: minutes(range ? range[1] : single[1]),
+              end: range ? minutes(range[2]) : null,
+              title: title.replace(/^\|\s*/, "").replace(/\s+/g, " ")
+            });
+            return;
+          }
+
+          if (keyword.test(line) && events.length && !/\d{1,2}:\d{2}/.test(line)) {
+            var previous = events[events.length - 1];
+            if (!previous.title.toLocaleUpperCase("cs-CZ").includes(line.toLocaleUpperCase("cs-CZ").trim())) {
+              previous.title = (previous.title + " " + line.trim()).replace(/\s+/g, " ");
+            }
+          }
+        });
+
+        var unique = [];
+        var seen = new Set();
+        events.sort(function (a, b) { return a.start - b.start; }).forEach(function (event) {
+          var key = event.start + "|" + event.title.toLocaleUpperCase("cs-CZ");
+          if (seen.has(key)) return;
+          seen.add(key);
+          unique.push(event);
+        });
+        return unique;
+      }
+
       async function loadPdfDay(day, fileName) {
         var response = await fetch(fileName + "?v=" + Date.now(), { cache: "no-store" });
         if (!response.ok) throw new Error(response.status === 404 ? "Soubor zatím není nahraný." : "PDF se nepodařilo stáhnout.");
@@ -1096,8 +1202,10 @@
         var changeDetectedAt = changed ? loadedAt : (scheduleMeta[day].changeDetectedAt || "");
         var lines = await extractPdfLines(buffer);
         var parsedSessions = parseScheduleLines(lines);
+        var parsedSupportEvents = parseSupportEvents(lines);
         var modified = response.headers.get("last-modified") || "";
         schedules[day] = parsedSessions;
+        supportEvents[day] = parsedSupportEvents;
         scheduleMeta[day] = {
           source: "Aktuální PDF",
           remote: true,
@@ -1111,6 +1219,7 @@
         };
         saveSetting("karting-pdf-schedule-" + day, JSON.stringify({
           sessions: parsedSessions,
+          supportEvents: parsedSupportEvents,
           modified: modified,
           loadedAt: loadedAt,
           changeDetectedAt: changeDetectedAt,
@@ -1594,6 +1703,53 @@
         });
       }
 
+      function renderSupportEvents(now) {
+        var events = (supportEvents[state.day] || []).slice().sort(function (a, b) { return a.start - b.start; });
+        elements.supportList.innerHTML = "";
+
+        if (!events.length) {
+          var empty = document.createElement("div");
+          empty.className = "kp-support-empty";
+          empty.textContent = "V tomto PDF nejsou uvedené žádné doprovodné aktivity.";
+          elements.supportList.appendChild(empty);
+          return;
+        }
+
+        var relevant = events.filter(function (event) {
+          var effectiveEnd = event.end || event.start + 30;
+          return effectiveEnd > now;
+        });
+        if (relevant.length < 3) {
+          var completed = events.filter(function (event) {
+            return (event.end || event.start + 30) <= now;
+          }).slice(-(3 - relevant.length));
+          relevant = completed.concat(relevant).sort(function (a, b) { return a.start - b.start; });
+        }
+
+        relevant.slice(0, 3).forEach(function (event) {
+          var effectiveEnd = event.end || event.start + 30;
+          var current = now >= event.start && now < effectiveEnd;
+          var completed = now >= effectiveEnd;
+          var row = document.createElement("div");
+          row.className = "kp-support-item" + (current ? " is-current" : "");
+
+          var time = document.createElement("span");
+          time.className = "kp-support-time";
+          if (current) {
+            time.textContent = "PRÁVĚ" + (event.end ? " · do " + formatClock(event.end, false) : "");
+          } else {
+            time.textContent = formatClock(event.start, false) + (event.end ? "–" + formatClock(event.end, false) : "") + (completed ? " ✓" : "");
+          }
+
+          var name = document.createElement("span");
+          name.className = "kp-support-name";
+          name.textContent = event.title;
+          row.appendChild(time);
+          row.appendChild(name);
+          elements.supportList.appendChild(row);
+        });
+      }
+
       function renderTeam(sessions, now, situation) {
         var currentJunior = situation.current && isJuniorCategory(situation.current.category) ? situation.current : null;
         var nextJunior = sessions.find(function (session) {
@@ -1685,6 +1841,7 @@
 
         renderTeam(sessions, now, situation);
         renderUpcoming(sessions, now, situation);
+        renderSupportEvents(now);
         elements.footer.textContent = state.live ? "Živý čas telefonu · změna zpoždění se uloží v tomto zařízení." : "Zkušební režim · změň čas a ověř si chování aplikace.";
       }
 
