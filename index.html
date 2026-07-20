@@ -537,6 +537,8 @@
     #karting-program-app .kp-ideal-trigger:hover,
     #karting-program-app .kp-ideal-trigger:focus-visible { border-color: var(--primary); box-shadow: 0 0 18px rgba(255, 212, 0, .16); outline: none; }
     #karting-program-app .kp-ideal-map { width: 100%; min-height: 360px; border: 1px solid var(--border); border-radius: 14px; background: radial-gradient(circle at 50% 45%, #16283a, #080d14 72%); }
+    #karting-program-app .kp-ideal-map[hidden],
+    #karting-program-app #kp-ideal-map-empty[hidden] { display: none !important; }
     #karting-program-app .kp-map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; color: var(--muted-foreground); }
     #karting-program-app .kp-map-legend span::before { content: ""; display: inline-block; width: 22px; height: 4px; margin-right: 7px; vertical-align: middle; border-radius: 4px; background: var(--viz-series-2); }
     #karting-program-app .kp-map-legend .is-ideal::before { background: var(--primary); }
