@@ -938,8 +938,10 @@
 
       function getPdfLibrary() {
         if (!pdfLibraryPromise) {
-          pdfLibraryPromise = import("https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.min.mjs").then(function (pdfjs) {
-            pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+          // Legacy build contains the polyfills needed by older Safari versions
+          // (notably Promise.withResolvers used by the modern PDF.js build).
+          pdfLibraryPromise = import("https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/legacy/build/pdf.min.mjs").then(function (pdfjs) {
+            pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/legacy/build/pdf.worker.min.mjs";
             return pdfjs;
           }).catch(function (error) {
             pdfLibraryPromise = null;
