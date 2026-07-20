@@ -1989,6 +1989,7 @@
             }).filter(Boolean);
             svg.appendChild(createSvgElement("polyline", { points: points.map(function (point) { return point[0] + "," + point[1]; }).join(" "), fill: "none", stroke: (field.colors || ["var(--primary)", "var(--viz-series-2)"])[lapIndex % 2], "stroke-width": fieldIndex ? "1.5" : "2.5", opacity: fieldIndex ? ".55" : "1" }));
           });
+          svg.appendChild(createSvgElement("text", { x: left + fieldIndex * 155, y: 15, fill: (field.colors || ["white"])[0], "font-size": "12", "font-weight": "700" }, field.label || (field.index === 2 ? "Rychlost" : field.index === 3 ? "Otáčky" : "Senzor")));
         });
         svg.appendChild(createSvgElement("text", { x: left, y: height - 9, fill: "var(--muted-foreground)", "font-size": "12" }, "start"));
         svg.appendChild(createSvgElement("text", { x: width - right, y: height - 9, "text-anchor": "end", fill: "var(--muted-foreground)", "font-size": "12" }, "cíl"));
@@ -2017,9 +2018,24 @@
         appendRecordItem(elements.lapDetailStats, "Čas kola", formatLapTime(lap.ms) + " s", (lap.ms === session.bestMs ? "NEJLEPŠÍ KOLO" : "+" + formatLapTime(lap.ms - session.bestMs) + " s"));
         appendRecordItem(elements.lapDetailStats, "Rychlost", Number(lap.minSpeed || 0).toFixed(1).replace(".", ",") + "–" + Number(lap.maxSpeed || 0).toFixed(1).replace(".", ",") + " km/h", "minimum–maximum");
         appendRecordItem(elements.lapDetailStats, "Otáčky", Math.round(lap.minRpm || 0) + "–" + Math.round(lap.maxRpm || 0), "rpm minimum–maximum");
-        drawTelemetryMap(elements.lapMap, gpsLap ? [gpsLap.points] : [], session.track, "speed");
-        drawTelemetryChart(elements.lapChart, gpsLap ? [gpsLap] : [], [{ index: 2, colors: ["var(--primary)"] }, { index: 3, colors: ["var(--viz-series-2)"] }]);
-        elements.lapNote.textContent = hasTelemetry(gpsLap) ? "Mapa: červená = pomalu, zelená = rychle. Graf kombinuje rychlost (žlutě) a otáčky (modře)." : "GPS stopa je dostupná, ale detailní rychlost a otáčky ještě nejsou uložené. Nahraj původní ZIP tohoto tréninku znovu.";
+        var brakeZones = [];
+        if (hasTelemetry(gpsLap)) {
+          var speeds = gpsLap.points.map(function (point) { return point[2]; }).filter(Number.isFinite);
+          var rpms = gpsLap.points.map(function (point) { return point[3]; }).filter(Number.isFinite);
+          var averageSpeed = speeds.reduce(function (sum, value) { return sum + value; }, 0) / speeds.length;
+          var averageRpm = rpms.reduce(function (sum, value) { return sum + value; }, 0) / rpms.length;
+          var lateral = Math.max.apply(null, gpsLap.points.map(function (point) { return Math.abs(point[5] || 0); }));
+          var dt = lap.ms / Math.max(1, gpsLap.points.length - 1) / 1000;
+          var braking = gpsLap.points.slice(1).map(function (point, index) { return { index: index + 1, value: ((point[2] - gpsLap.points[index][2]) / 3.6) / dt, point: point }; }).filter(function (item) { return Number.isFinite(item.value); }).sort(function (a, b) { return a.value - b.value; });
+          braking.forEach(function (item) { if (brakeZones.length < 3 && brakeZones.every(function (other) { return Math.abs(other.index - item.index) > 14; })) brakeZones.push(item); });
+          appendRecordItem(elements.lapDetailStats, "Průměrná rychlost", averageSpeed.toFixed(1).replace(".", ",") + " km/h", "z celého kola");
+          appendRecordItem(elements.lapDetailStats, "Průměrné otáčky", Math.round(averageRpm) + " rpm", "z celého kola");
+          appendRecordItem(elements.lapDetailStats, "Nejsilnější zpomalení", brakeZones.length ? Math.abs(brakeZones[0].value).toFixed(1).replace(".", ",") + " m/s²" : "—", "bod B1 na mapě");
+          appendRecordItem(elements.lapDetailStats, "Max. boční přetížení", lateral.toFixed(2).replace(".", ",") + " g", "orientační údaj senzoru");
+        }
+        drawTelemetryMap(elements.lapMap, gpsLap ? [gpsLap.points] : [], session.track, "speed", brakeZones.map(function (zone, index) { return { point: zone.point, text: "B" + (index + 1) }; }));
+        drawTelemetryChart(elements.lapChart, gpsLap ? [gpsLap] : [], [{ index: 2, label: "Rychlost · km/h", colors: ["var(--primary)"] }, { index: 3, label: "Otáčky · rpm", colors: ["var(--viz-series-2)"] }]);
+        elements.lapNote.textContent = hasTelemetry(gpsLap) ? "Barevná stopa: červená označuje nejpomalejší a zelená nejrychlejší místa. B1–B3 jsou tři nejsilnější zpomalení. Graf je veden od startu k cíli; žlutě rychlost, modře otáčky." : "GPS stopa je dostupná, ale detailní rychlost a otáčky ještě nejsou uložené. Nahraj původní ZIP tohoto tréninku znovu.";
         Array.from(elements.dataLaps.children).forEach(function (button) { button.classList.toggle("is-active", Number(button.dataset.lap) === Number(lapNumber)); });
       }
 
@@ -2040,6 +2056,40 @@
         session.laps.forEach(function (lap) { var option = document.createElement("option"); option.value = lap.lap; option.textContent = "Kolo " + lap.lap + " · " + formatLapTime(lap.ms); option.selected = lap.lap === selected; select.appendChild(option); });
       }
 
+      function lapDistanceSamples(gpsLap, count) {
+        if (!hasTelemetry(gpsLap)) return [];
+        var cumulative = [0];
+        for (var i = 1; i < gpsLap.points.length; i += 1) cumulative.push(cumulative[i - 1] + gpsDistance(gpsLap.points[i - 1], gpsLap.points[i]));
+        var total = cumulative[cumulative.length - 1], samples = [];
+        for (var step = 0; step < count; step += 1) {
+          var target = step / (count - 1) * total, index = 0;
+          while (index + 1 < cumulative.length && cumulative[index + 1] < target) index += 1;
+          samples.push({ fraction: step / (count - 1), index: index, elapsed: index / Math.max(1, gpsLap.points.length - 1) * gpsLap.ms, speed: gpsLap.points[index][2], point: gpsLap.points[index] });
+        }
+        return samples;
+      }
+
+      function drawComparisonChart(svg, gpsA, gpsB) {
+        svg.innerHTML = "";
+        var a = lapDistanceSamples(gpsA, 101), b = lapDistanceSamples(gpsB, 101);
+        if (!a.length || !b.length) return [];
+        var width = 900, height = 250, left = 48, right = 20, top = 25, speedBottom = 158, deltaTop = 180, deltaBottom = 225;
+        var speeds = a.concat(b).map(function (sample) { return sample.speed; }).filter(Number.isFinite), minSpeed = Math.min.apply(null, speeds), maxSpeed = Math.max.apply(null, speeds), range = Math.max(1, maxSpeed - minSpeed);
+        function speedPoints(samples) { return samples.map(function (sample) { return (left + sample.fraction * (width - left - right)) + "," + (top + (maxSpeed - sample.speed) / range * (speedBottom - top)); }).join(" "); }
+        svg.appendChild(createSvgElement("polyline", { points: speedPoints(a), fill: "none", stroke: "var(--primary)", "stroke-width": "2.5" }));
+        svg.appendChild(createSvgElement("polyline", { points: speedPoints(b), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "2.5" }));
+        var deltas = a.map(function (sample, index) { return { fraction: sample.fraction, value: b[index].elapsed - sample.elapsed, speedDifference: b[index].speed - sample.speed }; });
+        var maxAbs = Math.max(100, Math.max.apply(null, deltas.map(function (item) { return Math.abs(item.value); })));
+        var zeroY = (deltaTop + deltaBottom) / 2;
+        svg.appendChild(createSvgElement("line", { x1: left, y1: zeroY, x2: width - right, y2: zeroY, stroke: "var(--border)", "stroke-width": "1" }));
+        svg.appendChild(createSvgElement("polyline", { points: deltas.map(function (item) { return (left + item.fraction * (width - left - right)) + "," + (zeroY + item.value / maxAbs * (deltaBottom - deltaTop) / 2); }).join(" "), fill: "none", stroke: "#ff5964", "stroke-width": "2" }));
+        svg.appendChild(createSvgElement("text", { x: left, y: 15, fill: "var(--primary)", "font-size": "12", "font-weight": "700" }, "Rychlost kola A"));
+        svg.appendChild(createSvgElement("text", { x: left + 145, y: 15, fill: "var(--viz-series-2)", "font-size": "12", "font-weight": "700" }, "Rychlost kola B"));
+        svg.appendChild(createSvgElement("text", { x: left, y: deltaTop - 5, fill: "#ff7c85", "font-size": "12", "font-weight": "700" }, "Průběžná ztráta B proti A"));
+        [0, .25, .5, .75, 1].forEach(function (fraction) { svg.appendChild(createSvgElement("text", { x: left + fraction * (width - left - right), y: 244, "text-anchor": "middle", fill: "var(--muted-foreground)", "font-size": "11" }, Math.round(fraction * 100) + " %")); });
+        return deltas;
+      }
+
       function renderComparison(session) {
         var lapA = session.laps.find(function (lap) { return lap.lap === Number(elements.compareA.value); });
         var lapB = session.laps.find(function (lap) { return lap.lap === Number(elements.compareB.value); });
@@ -2049,8 +2099,16 @@
         appendRecordItem(elements.compareStats, "Kolo A", formatLapTime(lapA.ms) + " s", "kolo " + lapA.lap);
         appendRecordItem(elements.compareStats, "Kolo B", formatLapTime(lapB.ms) + " s", "kolo " + lapB.lap);
         appendRecordItem(elements.compareStats, "Rozdíl B proti A", (delta >= 0 ? "+" : "−") + formatLapTime(Math.abs(delta)) + " s", delta > 0 ? "Kolo A je rychlejší" : delta < 0 ? "Kolo B je rychlejší" : "shodný čas");
+        appendRecordItem(elements.compareStats, "Maximální rychlost", Number(lapA.maxSpeed || 0).toFixed(1).replace(".", ",") + " / " + Number(lapB.maxSpeed || 0).toFixed(1).replace(".", ","), "kolo A / kolo B · km/h");
+        appendRecordItem(elements.compareStats, "Minimální rychlost", Number(lapA.minSpeed || 0).toFixed(1).replace(".", ",") + " / " + Number(lapB.minSpeed || 0).toFixed(1).replace(".", ","), "kolo A / kolo B · km/h");
         drawTelemetryMap(elements.compareMap, [gpsA && gpsA.points, gpsB && gpsB.points], session.track, "compare");
-        drawTelemetryChart(elements.compareChart, [gpsA, gpsB].filter(Boolean), [{ index: 2, colors: ["var(--primary)", "var(--viz-series-2)"] }]);
+        var deltas = drawComparisonChart(elements.compareChart, gpsA, gpsB);
+        if (deltas.length) {
+          var worst = deltas.slice().sort(function (a, b) { return b.value - a.value; })[0];
+          var speedGap = deltas.slice().sort(function (a, b) { return Math.abs(b.speedDifference) - Math.abs(a.speedDifference); })[0];
+          appendRecordItem(elements.compareStats, "Největší průběžná ztráta B", "+" + formatLapTime(Math.max(0, worst.value)) + " s", "přibližně v " + Math.round(worst.fraction * 100) + " % délky kola");
+          appendRecordItem(elements.compareStats, "Největší rozdíl rychlosti", (speedGap.speedDifference >= 0 ? "+" : "−") + Math.abs(speedGap.speedDifference).toFixed(1).replace(".", ",") + " km/h", "kolo B proti A · " + Math.round(speedGap.fraction * 100) + " % tratě");
+        }
       }
 
       function detectCorners(gpsLap) {
@@ -2068,18 +2126,33 @@
       }
 
       function renderCorners(session) {
-        var gpsLap = gpsLapFor(session, session.bestLap), corners = detectCorners(gpsLap);
+        var gpsLap = gpsLapFor(session, session.bestLap), corners = detectCorners(gpsLap), telemetryLaps = (session.gpsLaps || []).filter(hasTelemetry);
         elements.cornerGrid.innerHTML = "";
         drawTelemetryMap(elements.cornerMap, gpsLap ? [gpsLap.points] : [], session.track, "speed", corners.map(function (corner, index) { return { point: corner.point, text: "Z" + (index + 1) }; }));
         corners.forEach(function (corner, index) {
-          var before = gpsLap.points[Math.max(0, corner.index - 10)], after = gpsLap.points[Math.min(gpsLap.points.length - 1, corner.index + 10)];
-          appendRecordItem(elements.cornerGrid, "Zatáčka Z" + (index + 1), corner.speed.toFixed(1).replace(".", ",") + " km/h", "nájezd " + (before[2] || 0).toFixed(1).replace(".", ",") + " · výjezd " + (after[2] || 0).toFixed(1).replace(".", ","));
+          var fraction = corner.index / Math.max(1, gpsLap.points.length - 1), entries = [], apexes = [], exits = [];
+          telemetryLaps.forEach(function (lap) {
+            var center = Math.round(fraction * (lap.points.length - 1)), radius = Math.max(5, Math.round(lap.points.length * .025));
+            var window = lap.points.slice(Math.max(0, center - radius), Math.min(lap.points.length, center + radius + 1));
+            var entry = lap.points[Math.max(0, center - radius * 2)], exit = lap.points[Math.min(lap.points.length - 1, center + radius * 2)];
+            if (entry && Number.isFinite(entry[2])) entries.push(entry[2]);
+            if (exit && Number.isFinite(exit[2])) exits.push(exit[2]);
+            var minimum = Math.min.apply(null, window.map(function (point) { return point[2]; }).filter(Number.isFinite));
+            if (Number.isFinite(minimum)) apexes.push(minimum);
+          });
+          var entryAverage = entries.reduce(function (sum, value) { return sum + value; }, 0) / Math.max(1, entries.length);
+          var apexAverage = apexes.reduce(function (sum, value) { return sum + value; }, 0) / Math.max(1, apexes.length);
+          var exitAverage = exits.reduce(function (sum, value) { return sum + value; }, 0) / Math.max(1, exits.length);
+          var deviation = standardDeviation(apexes), bestApex = apexes.length ? Math.max.apply(null, apexes) : 0;
+          appendRecordItem(elements.cornerGrid, "Zatáčka Z" + (index + 1), apexAverage.toFixed(1).replace(".", ",") + " km/h", "průměrné minimum · nejlepší " + bestApex.toFixed(1).replace(".", ",") + " km/h");
+          appendRecordItem(elements.cornerGrid, "Z" + (index + 1) + " · průjezd", entryAverage.toFixed(1).replace(".", ",") + " → " + apexAverage.toFixed(1).replace(".", ",") + " → " + exitAverage.toFixed(1).replace(".", ","), "nájezd → minimum → výjezd · km/h");
+          appendRecordItem(elements.cornerGrid, "Z" + (index + 1) + " · opakovatelnost", "±" + deviation.toFixed(1).replace(".", ",") + " km/h", apexes.length + " porovnaných kol");
         });
         if (!corners.length) appendRecordItem(elements.cornerGrid, "Chybí detailní telemetrie", "Nahraj ZIP znovu", "poté se automaticky rozpoznají zatáčky");
       }
 
       function renderEngine(session) {
-        var gpsLap = gpsLapFor(session, session.bestLap);
+        var gpsLap = gpsLapFor(session, session.bestLap), telemetryLaps = (session.gpsLaps || []).filter(hasTelemetry);
         elements.engineStats.innerHTML = "";
         if (!hasTelemetry(gpsLap)) {
           elements.engineChart.innerHTML = "";
@@ -2088,12 +2161,23 @@
         }
         var rpms = gpsLap.points.map(function (point) { return point[3]; }).filter(Number.isFinite), max = Math.max.apply(null, rpms), min = Math.min.apply(null, rpms), avg = rpms.reduce(function (sum, rpm) { return sum + rpm; }, 0) / rpms.length;
         var high = Math.round(rpms.filter(function (rpm) { return rpm >= max * .9; }).length / rpms.length * 100);
+        var middle = Math.round(rpms.filter(function (rpm) { return rpm >= max * .7 && rpm < max * .9; }).length / rpms.length * 100);
+        var low = Math.max(0, 100 - high - middle);
+        var drops = gpsLap.points.slice(5).map(function (point, index) { return { index: index + 5, value: point[3] - gpsLap.points[index][3] }; }).filter(function (item) { return Number.isFinite(item.value); });
+        var biggestDrop = drops.slice().sort(function (a, b) { return a.value - b.value; })[0];
+        var sessionMaxima = telemetryLaps.map(function (lap) { return Math.max.apply(null, lap.points.map(function (point) { return point[3]; }).filter(Number.isFinite)); }).filter(Number.isFinite);
+        var maxSpread = sessionMaxima.length ? Math.max.apply(null, sessionMaxima) - Math.min.apply(null, sessionMaxima) : 0;
         appendRecordItem(elements.engineStats, "Maximum", Math.round(max) + " rpm", "nejlepší kolo");
         appendRecordItem(elements.engineStats, "Průměr", Math.round(avg) + " rpm", "celé kolo");
         appendRecordItem(elements.engineStats, "Minimum", Math.round(min) + " rpm", "největší propad");
         appendRecordItem(elements.engineStats, "Ve vysokých otáčkách", high + " %", "nad 90 % maxima");
-        drawTelemetryChart(elements.engineChart, [gpsLap], [{ index: 3, colors: ["var(--viz-series-2)"] }]);
-        elements.engineNote.textContent = "Průběh otáček nejlepšího kola. Výrazné propady obvykle odpovídají nejpomalejším zatáčkám.";
+        appendRecordItem(elements.engineStats, "Střední pásmo", middle + " %", "70–90 % maxima");
+        appendRecordItem(elements.engineStats, "Nízké otáčky", low + " %", "pod 70 % maxima");
+        appendRecordItem(elements.engineStats, "Největší krátký propad", biggestDrop ? Math.abs(Math.round(biggestDrop.value)) + " rpm" : "—", biggestDrop ? "přibližně v " + Math.round(biggestDrop.index / gpsLap.points.length * 100) + " % kola" : "bez detailu");
+        appendRecordItem(elements.engineStats, "Rozptyl maxima tréninku", Math.round(maxSpread) + " rpm", telemetryLaps.length + " porovnaných kol");
+        var comparisonLap = telemetryLaps.slice().sort(function (a, b) { return b.ms - a.ms; })[0];
+        drawTelemetryChart(elements.engineChart, [gpsLap, comparisonLap].filter(Boolean), [{ index: 3, label: "Otáčky · modrá nejlepší / žlutá pomalejší", colors: ["var(--viz-series-2)", "var(--primary)"] }]);
+        elements.engineNote.textContent = maxSpread > 350 ? "Maximální otáčky se mezi koly liší o " + Math.round(maxSpread) + " rpm. Prověř výjezdy na nejdelší rovinku a zda motor ve všech kolech dosahuje stejného maxima." : "Maximální otáčky jsou mezi koly stabilní (rozptyl " + Math.round(maxSpread) + " rpm). Největší prostor hledej spíše v minimálních otáčkách a rychlosti výjezdu ze zatáček.";
       }
 
       function standardDeviation(values) {
