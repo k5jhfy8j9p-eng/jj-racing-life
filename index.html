@@ -1021,6 +1021,7 @@
       var remoteLoading = false;
       var pdfCheckCompleted = false;
       var fflateLibraryPromise = null;
+      var alfanoDatabasePromise = null;
       var alfanoSessions = [];
       var alfanoTrackRecords = {};
       var alfanoSectorProfiles = {};
@@ -1626,8 +1627,64 @@
         } catch (error) { /* Poškozenou uloženou kopii ignorujeme. */ }
       }
 
-      function saveAlfanoSessions() {
-        saveSetting("karting-alfano-sessions", JSON.stringify(alfanoSessions));
+      function openAlfanoDatabase() {
+        if (alfanoDatabasePromise) return alfanoDatabasePromise;
+        alfanoDatabasePromise = new Promise(function (resolve, reject) {
+          if (!window.indexedDB) return reject(new Error("Prohlížeč nepodporuje velké úložiště telemetrie."));
+          var request = indexedDB.open("jj-racing-telemetry", 1);
+          request.onupgradeneeded = function () { if (!request.result.objectStoreNames.contains("data")) request.result.createObjectStore("data"); };
+          request.onsuccess = function () { resolve(request.result); };
+          request.onerror = function () { reject(request.error || new Error("Databázi telemetrie nelze otevřít.")); };
+        });
+        return alfanoDatabasePromise;
+      }
+
+      async function persistAlfanoSessions() {
+        var database = await openAlfanoDatabase();
+        return new Promise(function (resolve, reject) {
+          var transaction = database.transaction("data", "readwrite");
+          transaction.objectStore("data").put(alfanoSessions, "sessions");
+          transaction.oncomplete = function () { resolve(true); };
+          transaction.onerror = function () { reject(transaction.error || new Error("Telemetrii se nepodařilo uložit.")); };
+          transaction.onabort = function () { reject(transaction.error || new Error("Uložení telemetrie bylo přerušeno.")); };
+        });
+      }
+
+      async function loadAlfanoSessionsFromDatabase() {
+        var database = await openAlfanoDatabase();
+        return new Promise(function (resolve, reject) {
+          var request = database.transaction("data", "readonly").objectStore("data").get("sessions");
+          request.onsuccess = function () { resolve(request.result); };
+          request.onerror = function () { reject(request.error); };
+        });
+      }
+
+      async function saveAlfanoSessions() {
+        var summaries = alfanoSessions.map(function (session) {
+          var summary = Object.assign({}, session);
+          delete summary.gpsLaps;
+          delete summary.virtualSectors;
+          return summary;
+        });
+        saveSetting("karting-alfano-sessions", JSON.stringify(summaries));
+        await persistAlfanoSessions();
+        return true;
+      }
+
+      async function restoreLargeAlfanoStorage() {
+        try {
+          var stored = await loadAlfanoSessionsFromDatabase();
+          if (Array.isArray(stored) && stored.length) {
+            alfanoSessions = stored.filter(alfanoSessionIsValid);
+          } else if (alfanoSessions.length) {
+            await persistAlfanoSessions();
+          }
+          updateAlfanoTrackRecords(alfanoSessions);
+          renderAlfano();
+        } catch (error) {
+          elements.alfanoMessage.textContent = "Velké úložiště telemetrie není dostupné. Před dalším importem stáhni zálohu.";
+          elements.alfanoMessage.classList.add("is-error");
+        }
       }
 
       function trackRecordKey(track) {
@@ -1713,7 +1770,7 @@
           alfanoSectorProfiles = profiles;
           if (backup.settings && Number.isFinite(Number(backup.settings.delay))) state.delay = Number(backup.settings.delay);
           if (backup.settings && Number.isFinite(Number(backup.settings.prep))) state.prep = Number(backup.settings.prep);
-          saveAlfanoSessions();
+          await saveAlfanoSessions();
           saveAlfanoTrackRecords();
           saveAlfanoSectorProfiles();
           saveSetting("karting-program-delay", String(state.delay));
@@ -2656,7 +2713,7 @@
           var byFileName = new Map(alfanoSessions.map(function (session) { return [session.fileName, session]; }));
           imported.forEach(function (session) { byFileName.set(session.fileName, session); });
           alfanoSessions = Array.from(byFileName.values());
-          saveAlfanoSessions();
+          await saveAlfanoSessions();
           updateAlfanoTrackRecords(imported);
           renderAlfano();
           elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink" : imported.length < 5 ? " tréninky" : " tréninků") + " včetně GPS sektorů.";
@@ -2985,10 +3042,10 @@
         var file = elements.backupFile.files && elements.backupFile.files[0];
         if (file) restoreAlfanoBackup(file);
       });
-      elements.clearAlfano.addEventListener("click", function () {
+      elements.clearAlfano.addEventListener("click", async function () {
         if (!window.confirm("Opravdu vymazat všechny uložené tréninky tohoto víkendu?")) return;
         alfanoSessions = [];
-        saveAlfanoSessions();
+        await saveAlfanoSessions();
         renderAlfano();
         elements.alfanoMessage.textContent = "Data víkendu byla vymazána.";
         elements.alfanoMessage.classList.remove("is-error");
@@ -3019,6 +3076,7 @@
       updateAlfanoTrackRecords(alfanoSessions);
       renderPdfStatus(false);
       renderAlfano();
+      restoreLargeAlfanoStorage();
       setDay(state.day);
       setMode(state.live);
       loadRemoteSchedules();
