@@ -2710,9 +2710,12 @@
         try {
           var imported = await Promise.all(files.map(parseAlfanoZip));
           applyVirtualSectors(imported);
-          var byFileName = new Map(alfanoSessions.map(function (session) { return [session.fileName, session]; }));
-          imported.forEach(function (session) { byFileName.set(session.fileName, session); });
-          alfanoSessions = Array.from(byFileName.values());
+          function sessionIdentity(session) {
+            return [trackRecordKey(session.track), session.date || "", session.time || "", String(session.driver || "JJ").toLocaleUpperCase("cs-CZ")].join("|");
+          }
+          var bySession = new Map(alfanoSessions.map(function (session) { return [sessionIdentity(session), session]; }));
+          imported.forEach(function (session) { bySession.set(sessionIdentity(session), session); });
+          alfanoSessions = Array.from(bySession.values());
           await saveAlfanoSessions();
           updateAlfanoTrackRecords(imported);
           renderAlfano();
