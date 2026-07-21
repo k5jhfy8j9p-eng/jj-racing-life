@@ -925,10 +925,11 @@
         </div>
         <label class="form-label">Trénink <select class="form-control" id="kp-data-session"></select></label>
       </div>
+      <div class="kp-data-note">Metodika kontroly: do souhrnných výpočtů vstupují pouze úplná měřená kola do +5 s od správně určeného nejlepšího kola. Telemetrie různých kol je srovnána podle ujeté GPS vzdálenosti, nikoli podle pořadí bodů. Různé konfigurace stejné tratě se vyhodnocují odděleně a bod zpomalování se zobrazí jen tehdy, když jej spolehlivě potvrdí alespoň tři další kola.</div>
       <section class="kp-data-panel" data-data-panel="overview"><div class="kp-record-grid" id="kp-data-overview"></div><div class="kp-report-verdict" id="kp-data-advice"></div></section>
       <section class="kp-data-panel" data-data-panel="laps" hidden><div class="kp-data-layout"><div class="kp-data-sidebar" id="kp-data-laps"></div><div class="kp-data-main"><div class="kp-record-grid" id="kp-lap-detail-stats"></div><svg class="kp-telemetry-map" id="kp-lap-map" viewBox="0 0 900 500"></svg><svg class="kp-telemetry-chart" id="kp-lap-chart" viewBox="0 0 900 250"></svg><div class="kp-data-note" id="kp-lap-note"></div></div></div></section>
       <section class="kp-data-panel" data-data-panel="compare" hidden><div class="kp-data-main"><div class="kp-data-toolbar"><label class="form-label">Kolo A <select class="form-control" id="kp-compare-a"></select></label><label class="form-label">Kolo B <select class="form-control" id="kp-compare-b"></select></label></div><div class="kp-record-grid" id="kp-compare-stats"></div><svg class="kp-telemetry-map" id="kp-compare-map" viewBox="0 0 900 500"></svg><svg class="kp-telemetry-chart" id="kp-compare-chart" viewBox="0 0 900 250"></svg></div></section>
-      <section class="kp-data-panel" data-data-panel="track" hidden><div class="kp-data-main"><svg class="kp-telemetry-map" id="kp-corner-map" viewBox="0 0 900 500"></svg><div class="kp-corner-grid" id="kp-corner-grid"></div><div class="kp-data-note">Zatáčky jsou automaticky rozpoznané podle místních minim rychlosti a změny směru.</div></div></section>
+      <section class="kp-data-panel" data-data-panel="track" hidden><div class="kp-data-main"><svg class="kp-telemetry-map" id="kp-corner-map" viewBox="0 0 900 500"></svg><div class="kp-corner-grid" id="kp-corner-grid"></div><div class="kp-data-note">Zatáčky jsou automaticky rozpoznané podle místních minim rychlosti v GPS průběhu nejlepšího analyzovatelného kola. Hodnoty ostatních kol jsou do stejného místa promítnuty podle ujeté vzdálenosti.</div></div></section>
       <section class="kp-data-panel" data-data-panel="dynamics" hidden><div class="kp-data-main"><div class="kp-record-grid" id="kp-dynamics-stats"></div><svg class="kp-telemetry-map" id="kp-dynamics-map" viewBox="0 0 900 500"></svg><div class="kp-data-main" id="kp-dynamics-corners"></div><div class="kp-report-verdict" id="kp-dynamics-advice"></div><div class="kp-data-note">Všechny rozdíly jsou porovnány s nejlepším kolem stejného tréninku. Mapa označuje pouze místa, ke kterým existuje konkrétní doporučení.</div></div></section>
       <section class="kp-data-panel" data-data-panel="engine" hidden><div class="kp-record-grid" id="kp-engine-stats"></div><svg class="kp-telemetry-chart" id="kp-engine-chart" viewBox="0 0 900 300"></svg><div class="kp-data-note" id="kp-engine-note"></div></section>
       <section class="kp-data-panel" data-data-panel="coach" hidden><div class="kp-data-main"><div class="kp-record-grid" id="kp-coach-stats"></div><div class="kp-coach-block is-priority"><h3>Hlavní doporučení pro další jízdu</h3><p id="kp-coach-priority"></p></div><div class="kp-coach-block"><h3>Vývoj tempa</h3><p id="kp-coach-pace"></p></div><div class="kp-coach-block"><h3>Analýza zatáček</h3><p id="kp-coach-corners"></p></div><div class="kp-coach-block"><h3>Studijní kolo</h3><p id="kp-coach-study"></p></div><div class="kp-coach-block"><h3>Konkrétní cíl</h3><p id="kp-coach-target"></p></div></div></section>
@@ -1728,7 +1729,7 @@
         if (!saved) return;
         try {
           var parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) alfanoSessions = parsed.filter(alfanoSessionIsValid);
+          if (Array.isArray(parsed)) alfanoSessions = parsed.filter(alfanoSessionIsValid).map(normalizeAlfanoSession);
         } catch (error) { /* Poškozenou uloženou kopii ignorujeme. */ }
       }
 
@@ -1780,11 +1781,11 @@
         try {
           var stored = await loadAlfanoSessionsFromDatabase();
           if (Array.isArray(stored) && stored.length) {
-            alfanoSessions = stored.filter(alfanoSessionIsValid);
+            alfanoSessions = stored.filter(alfanoSessionIsValid).map(normalizeAlfanoSession);
           } else if (alfanoSessions.length) {
             await persistAlfanoSessions();
           }
-          updateAlfanoTrackRecords(alfanoSessions);
+          rebuildTelemetryAnalytics(alfanoSessions);
           renderAlfano();
         } catch (error) {
           elements.alfanoMessage.textContent = "Velké úložiště telemetrie není dostupné. Před dalším importem stáhni zálohu.";
@@ -1898,7 +1899,7 @@
           if (!backup || backup.format !== "jj-racing-backup" || backup.version !== 1 || !Array.isArray(backup.alfanoSessions)) {
             throw new Error("Soubor není platná záloha JJ Racing.");
           }
-          var sessions = backup.alfanoSessions.filter(alfanoSessionIsValid);
+          var sessions = backup.alfanoSessions.filter(alfanoSessionIsValid).map(normalizeAlfanoSession);
           var records = backup.alfanoTrackRecords && typeof backup.alfanoTrackRecords === "object" && !Array.isArray(backup.alfanoTrackRecords) ? backup.alfanoTrackRecords : {};
           var profiles = backup.alfanoSectorProfiles && typeof backup.alfanoSectorProfiles === "object" && !Array.isArray(backup.alfanoSectorProfiles) ? backup.alfanoSectorProfiles : {};
           var trackCount = Object.keys(records).length;
@@ -1906,6 +1907,7 @@
           alfanoSessions = sessions;
           alfanoTrackRecords = records;
           alfanoSectorProfiles = profiles;
+          rebuildTelemetryAnalytics(alfanoSessions);
           if (backup.settings && Number.isFinite(Number(backup.settings.delay))) state.delay = Number(backup.settings.delay);
           if (backup.settings && Number.isFinite(Number(backup.settings.prep))) state.prep = Number(backup.settings.prep);
           await saveAlfanoSessions();
@@ -1931,7 +1933,8 @@
       function updateAlfanoTrackRecords(sessions) {
         var changed = false;
         sessions.filter(alfanoSessionIsValid).forEach(function (session) {
-          var key = trackRecordKey(session.track);
+          normalizeAlfanoSession(session);
+          var key = trackConfigurationKey(session);
           var record = alfanoTrackRecords[key];
           if (!record || !Number.isFinite(record.bestMs) || session.bestMs < record.bestMs) {
             alfanoTrackRecords[key] = {
@@ -1949,9 +1952,7 @@
       }
 
       function calculateConsistency(session) {
-        var cleanLaps = session.laps.filter(function (lap) {
-          return Number.isFinite(lap.ms) && lap.ms >= session.bestMs && lap.ms <= session.bestMs + 5000;
-        });
+        var cleanLaps = analysisLaps(session);
         var consistentLaps = cleanLaps.filter(function (lap) { return lap.ms <= session.bestMs + 500; });
         return {
           count: consistentLaps.length,
@@ -1968,14 +1969,16 @@
           elements.consistencyCopy.textContent = "Nejdřív nahraj data z Alfana.";
           return;
         }
+        var validNumbers = new Set(analysisLaps(latest).map(function (lap) { return lap.lap; }));
         var clean = latest.laps.filter(function (lap) { return Number.isFinite(lap.ms); });
         elements.consistencyCopy.textContent = latest.track + " · trénink " + latest.time + " · nejlepší " + formatLapTime(latest.bestMs) + " s";
         clean.forEach(function (lap) {
           var delta = lap.ms - latest.bestMs;
           var row = document.createElement("div");
+          var included = validNumbers.has(lap.lap);
           row.className = "kp-lap-row" + (delta === 0 ? " is-best" : "");
           var quality = Math.max(3, 100 - Math.max(0, delta) / 30);
-          row.innerHTML = "<strong>Kolo " + lap.lap + "</strong><strong>" + formatLapTime(lap.ms) + " s</strong><span class='kp-lap-delta'>" + (delta === 0 ? "NEJLEPŠÍ" : "+" + formatLapTime(delta) + " s") + "</span><span class='kp-lap-bar'><span style='width:" + quality.toFixed(0) + "%'></span></span>";
+          row.innerHTML = "<strong>Kolo " + lap.lap + "</strong><strong>" + formatLapTime(lap.ms) + " s</strong><span class='kp-lap-delta'>" + (!included ? "MIMO ANALÝZU" : delta === 0 ? "NEJLEPŠÍ" : "+" + formatLapTime(delta) + " s") + "</span><span class='kp-lap-bar'><span style='width:" + (included ? quality.toFixed(0) : "3") + "%'></span></span>";
           elements.lapList.appendChild(row);
         });
       }
@@ -1989,12 +1992,12 @@
           return;
         }
         var latest = sorted[sorted.length - 1];
-        var key = trackRecordKey(latest.track);
-        var trackSessions = sorted.filter(function (session) { return trackRecordKey(session.track) === key; });
+        var key = trackConfigurationKey(latest);
+        var trackSessions = sorted.filter(function (session) { return trackConfigurationKey(session) === key; });
         var fastest = trackSessions.reduce(function (best, session) { return session.bestMs < best.bestMs ? session : best; }, trackSessions[0]);
         var fastestSpeed = trackSessions.reduce(function (best, session) { return (session.maxSpeed || 0) > (best.maxSpeed || 0) ? session : best; }, trackSessions[0]);
         var eligible = trackSessions.map(function (session) {
-          var valid = session.laps.filter(function (lap) { return lap.ms >= session.bestMs && lap.ms <= session.bestMs + 5000; });
+          var valid = analysisLaps(session);
           var consistency = calculateConsistency(session);
           var average = valid.length ? valid.reduce(function (sum, lap) { return sum + lap.ms; }, 0) / valid.length : Infinity;
           return { session: session, valid: valid, consistency: consistency, average: average };
@@ -2021,7 +2024,7 @@
           item.innerHTML = "<span>" + record[0] + "</span><strong>" + record[1] + "</strong><small>" + record[2] + "</small>";
           elements.recordGrid.appendChild(item);
         });
-        elements.recordsHistory.textContent = "Celá historie: " + sorted.length + " tréninků · " + allLaps + " kol · " + new Set(sorted.map(function (session) { return trackRecordKey(session.track); })).size + " tratí";
+        elements.recordsHistory.textContent = "Celá historie: " + sorted.length + " tréninků · " + allLaps + " kol · " + new Set(sorted.map(trackConfigurationKey)).size + " konfigurací tratí";
       }
 
       function appendRecordItem(container, label, value, note) {
@@ -2041,7 +2044,7 @@
         elements.latestGrid.innerHTML = "";
         elements.latestChart.innerHTML = "";
         if (!latest) return;
-        var valid = latest.laps.filter(function (lap) { return lap.ms >= latest.bestMs && lap.ms <= latest.bestMs + 5000; });
+        var valid = analysisLaps(latest);
         var fastestThree = valid.slice().sort(function (a, b) { return a.ms - b.ms; }).slice(0, 3);
         var middle = Math.ceil(valid.length / 2);
         var firstAverage = averageMs(valid.slice(0, middle));
@@ -2076,6 +2079,109 @@
         return distance;
       }
 
+      function median(values) {
+        var sorted = values.filter(Number.isFinite).slice().sort(function (a, b) { return a - b; });
+        if (!sorted.length) return NaN;
+        var middle = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+      }
+
+      function plausibleTimedLaps(session) {
+        var laps = (session && Array.isArray(session.laps) ? session.laps : []).filter(function (lap) {
+          return Number.isFinite(lap.lap) && Number.isFinite(lap.ms) && lap.ms > 0;
+        });
+        if (laps.length <= 1) return laps;
+        if (laps.length === 2) {
+          var shorter = Math.min(laps[0].ms, laps[1].ms), longer = Math.max(laps[0].ms, laps[1].ms);
+          return shorter < longer * .65 ? laps.filter(function (lap) { return lap.ms === longer; }) : laps;
+        }
+        var center = median(laps.map(function (lap) { return lap.ms; }));
+        var plausible = laps.filter(function (lap) { return lap.ms >= Math.max(8000, center * .72) && lap.ms <= center * 1.35; });
+        return plausible.length ? plausible : laps;
+      }
+
+      function analysisLaps(session) {
+        var plausible = plausibleTimedLaps(session);
+        if (!plausible.length) return [];
+        var best = Math.min.apply(null, plausible.map(function (lap) { return lap.ms; }));
+        return plausible.filter(function (lap) { return lap.ms >= best && lap.ms <= best + 5000; });
+      }
+
+      function normalizeAlfanoSession(session) {
+        if (!session || !Array.isArray(session.laps)) return session;
+        var clean = analysisLaps(session);
+        if (!clean.length) return session;
+        var best = clean.reduce(function (current, lap) { return lap.ms < current.ms ? lap : current; }, clean[0]);
+        session.bestMs = best.ms;
+        session.bestLap = best.lap;
+        session.lastMs = clean[clean.length - 1].ms;
+        session.maxSpeed = Math.max.apply(null, clean.map(function (lap) { return Number(lap.maxSpeed) || 0; }));
+        session.maxRpm = Math.max.apply(null, clean.map(function (lap) { return Number(lap.maxRpm) || 0; }));
+        return session;
+      }
+
+      function telemetryLapIsAnalyzable(session, gpsLap) {
+        if (!hasTelemetry(gpsLap)) return false;
+        var validNumbers = new Set(analysisLaps(session).map(function (lap) { return lap.lap; }));
+        return validNumbers.has(gpsLap.lap) && gpsLap.points.length > 100;
+      }
+
+      function sessionTrackLength(session) {
+        var lengths = (session.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(session, lap); }).map(function (lap) {
+          return gpsPathDistance(lap.points);
+        }).filter(function (length) { return Number.isFinite(length) && length > 100; });
+        return median(lengths);
+      }
+
+      function trackConfigurationKey(session) {
+        var base = trackRecordKey(session && session.track);
+        var length = sessionTrackLength(session || {});
+        return Number.isFinite(length) ? base + "|L" + Math.round(length / 100) * 100 : base;
+      }
+
+      function telemetryProgress(gpsLap) {
+        if (!gpsLap || !Array.isArray(gpsLap.points) || gpsLap.points.length < 2) return null;
+        var cumulative = [0];
+        for (var i = 1; i < gpsLap.points.length; i += 1) cumulative.push(cumulative[i - 1] + gpsDistance(gpsLap.points[i - 1], gpsLap.points[i]));
+        var total = cumulative[cumulative.length - 1];
+        return Number.isFinite(total) && total > 0 ? { cumulative: cumulative, total: total } : null;
+      }
+
+      function interpolateTelemetryPoint(a, b, part) {
+        var size = Math.max(a.length, b.length), point = [];
+        for (var i = 0; i < size; i += 1) {
+          var first = a[i], second = b[i];
+          point[i] = Number.isFinite(first) && Number.isFinite(second) ? first + (second - first) * part : Number.isFinite(first) ? first : second;
+        }
+        return point;
+      }
+
+      function telemetrySampleAtFraction(gpsLap, fraction, progress) {
+        progress = progress || telemetryProgress(gpsLap);
+        if (!progress) return null;
+        var bounded = Math.max(0, Math.min(1, fraction));
+        var target = bounded * progress.total, index = 0;
+        while (index + 1 < progress.cumulative.length && progress.cumulative[index + 1] < target) index += 1;
+        var next = Math.min(gpsLap.points.length - 1, index + 1);
+        var segment = Math.max(.000001, progress.cumulative[next] - progress.cumulative[index]);
+        var part = next === index ? 0 : Math.max(0, Math.min(1, (target - progress.cumulative[index]) / segment));
+        var position = index + part;
+        return {
+          fraction: bounded,
+          index: position,
+          elapsed: position / Math.max(1, gpsLap.points.length - 1) * gpsLap.ms,
+          speed: interpolateTelemetryPoint(gpsLap.points[index], gpsLap.points[next], part)[2],
+          point: interpolateTelemetryPoint(gpsLap.points[index], gpsLap.points[next], part)
+        };
+      }
+
+      function telemetryFractionAtIndex(gpsLap, index) {
+        var progress = telemetryProgress(gpsLap);
+        if (!progress) return index / Math.max(1, gpsLap.points.length - 1);
+        var bounded = Math.max(0, Math.min(gpsLap.points.length - 1, Math.round(index)));
+        return progress.cumulative[bounded] / progress.total;
+      }
+
       function renderMileageDetail() {
         var sorted = alfanoSessions.filter(alfanoSessionIsValid);
         elements.mileageGrid.innerHTML = "";
@@ -2084,7 +2190,7 @@
         var byTrack = {};
         var gpsMeters = 0;
         sorted.forEach(function (session) {
-          var key = trackRecordKey(session.track);
+          var key = trackConfigurationKey(session);
           if (!byTrack[key]) byTrack[key] = { name: session.track, sessions: 0, laps: 0 };
           byTrack[key].sessions += 1;
           byTrack[key].laps += session.laps.length;
@@ -2180,14 +2286,15 @@
         var width = 900, height = Number(svg.getAttribute("viewBox").split(" ")[3]) || 250, left = 45, right = 18, top = 22, bottom = 30;
         fields.forEach(function (field, fieldIndex) {
           laps.forEach(function (lap, lapIndex) {
-            var values = lap.points.map(function (point) { return point[field.index]; }).filter(Number.isFinite);
+            var samples = lapDistanceSamples(lap, Math.max(101, Math.min(301, lap.points.length)));
+            var values = samples.map(function (sample) { return sample.point[field.index]; }).filter(Number.isFinite);
             if (!values.length) return;
             var min = field.min !== undefined ? field.min : Math.min.apply(null, values);
             var max = field.max !== undefined ? field.max : Math.max.apply(null, values);
             var range = Math.max(1, max - min);
-            var points = lap.points.map(function (point, index) {
-              var value = point[field.index];
-              return Number.isFinite(value) ? [left + index / Math.max(1, lap.points.length - 1) * (width - left - right), top + (max - value) / range * (height - top - bottom)] : null;
+            var points = samples.map(function (sample) {
+              var value = sample.point[field.index];
+              return Number.isFinite(value) ? [left + sample.fraction * (width - left - right), top + (max - value) / range * (height - top - bottom)] : null;
             }).filter(Boolean);
             svg.appendChild(createSvgElement("polyline", { points: points.map(function (point) { return point[0] + "," + point[1]; }).join(" "), fill: "none", stroke: (field.colors || ["var(--primary)", "var(--viz-series-2)"])[lapIndex % 2], "stroke-width": fieldIndex ? "1.5" : "2.5", opacity: fieldIndex ? ".55" : "1" }));
           });
@@ -2199,11 +2306,12 @@
 
       function renderDataOverview(session) {
         elements.dataOverview.innerHTML = "";
-        var valid = session.laps.filter(function (lap) { return lap.ms <= session.bestMs + 5000; });
+        var valid = analysisLaps(session);
         var consistency = calculateConsistency(session);
         var fastestThree = valid.slice().sort(function (a, b) { return a.ms - b.ms; }).slice(0, 3);
         appendRecordItem(elements.dataOverview, "Nejlepší kolo", formatLapTime(session.bestMs) + " s", "kolo " + session.bestLap);
         appendRecordItem(elements.dataOverview, "Průměr platných kol", formatLapTime(averageMs(valid)) + " s", valid.length + " kol");
+        appendRecordItem(elements.dataOverview, "Vyřazená kola", String(Math.max(0, session.laps.length - valid.length)), "výjezdová, zastavovací nebo více než +5 s");
         appendRecordItem(elements.dataOverview, "Konzistence", consistency.percent + " %", consistency.count + " z " + consistency.total + " kol do +0,5 s");
         appendRecordItem(elements.dataOverview, "Tři nejrychlejší", fastestThree.map(function (lap) { return formatLapTime(lap.ms); }).join(" · "), "kola " + fastestThree.map(function (lap) { return lap.lap; }).join(", "));
         appendRecordItem(elements.dataOverview, "Maximální rychlost", Number(session.maxSpeed || 0).toFixed(1).replace(".", ",") + " km/h", "souhrn tréninku");
@@ -2216,37 +2324,34 @@
         var lap = session.laps.find(function (item) { return item.lap === Number(lapNumber); });
         var gpsLap = gpsLapFor(session, lapNumber);
         if (!lap) return;
+        var included = analysisLaps(session).some(function (item) { return item.lap === lap.lap; });
         elements.lapDetailStats.innerHTML = "";
-        appendRecordItem(elements.lapDetailStats, "Čas kola", formatLapTime(lap.ms) + " s", (lap.ms === session.bestMs ? "NEJLEPŠÍ KOLO" : "+" + formatLapTime(lap.ms - session.bestMs) + " s"));
+        appendRecordItem(elements.lapDetailStats, "Čas kola", formatLapTime(lap.ms) + " s", !included ? "MIMO AUTOMATICKOU ANALÝZU" : lap.ms === session.bestMs ? "NEJLEPŠÍ KOLO" : "+" + formatLapTime(lap.ms - session.bestMs) + " s");
         appendRecordItem(elements.lapDetailStats, "Rychlost", Number(lap.minSpeed || 0).toFixed(1).replace(".", ",") + "–" + Number(lap.maxSpeed || 0).toFixed(1).replace(".", ",") + " km/h", "minimum–maximum");
         appendRecordItem(elements.lapDetailStats, "Otáčky", Math.round(lap.minRpm || 0) + "–" + Math.round(lap.maxRpm || 0), "rpm minimum–maximum");
-        var brakeZones = [];
         if (hasTelemetry(gpsLap)) {
           var speeds = gpsLap.points.map(function (point) { return point[2]; }).filter(Number.isFinite);
           var rpms = gpsLap.points.map(function (point) { return point[3]; }).filter(Number.isFinite);
           var averageSpeed = speeds.reduce(function (sum, value) { return sum + value; }, 0) / speeds.length;
           var averageRpm = rpms.reduce(function (sum, value) { return sum + value; }, 0) / rpms.length;
           var lateral = Math.max.apply(null, gpsLap.points.map(function (point) { return Math.abs(point[5] || 0); }));
-          var dt = lap.ms / Math.max(1, gpsLap.points.length - 1) / 1000;
-          var braking = gpsLap.points.slice(1).map(function (point, index) { return { index: index + 1, value: ((point[2] - gpsLap.points[index][2]) / 3.6) / dt, point: point }; }).filter(function (item) { return Number.isFinite(item.value); }).sort(function (a, b) { return a.value - b.value; });
-          braking.forEach(function (item) { if (brakeZones.length < 3 && brakeZones.every(function (other) { return Math.abs(other.index - item.index) > 14; })) brakeZones.push(item); });
           appendRecordItem(elements.lapDetailStats, "Průměrná rychlost", averageSpeed.toFixed(1).replace(".", ",") + " km/h", "z celého kola");
           appendRecordItem(elements.lapDetailStats, "Průměrné otáčky", Math.round(averageRpm) + " rpm", "z celého kola");
-          appendRecordItem(elements.lapDetailStats, "Nejsilnější zpomalení", brakeZones.length ? Math.abs(brakeZones[0].value).toFixed(1).replace(".", ",") + " m/s²" : "—", "bod B1 na mapě");
           appendRecordItem(elements.lapDetailStats, "Max. boční přetížení", lateral.toFixed(2).replace(".", ",") + " g", "orientační údaj senzoru");
         }
-        drawTelemetryMap(elements.lapMap, gpsLap ? [gpsLap.points] : [], session.track, "speed", brakeZones.map(function (zone, index) { return { point: zone.point, text: "B" + (index + 1) }; }));
+        drawTelemetryMap(elements.lapMap, gpsLap ? [gpsLap.points] : [], session.track, "speed", []);
         drawTelemetryChart(elements.lapChart, gpsLap ? [gpsLap] : [], [{ index: 2, label: "Rychlost · km/h", colors: ["var(--primary)"] }, { index: 3, label: "Otáčky · rpm", colors: ["var(--viz-series-2)"] }]);
-        elements.lapNote.textContent = hasTelemetry(gpsLap) ? "Barevná stopa: červená označuje nejpomalejší a zelená nejrychlejší místa. B1–B3 jsou tři nejsilnější zpomalení. Graf je veden od startu k cíli; žlutě rychlost, modře otáčky." : "GPS stopa je dostupná, ale detailní rychlost a otáčky ještě nejsou uložené. Nahraj původní ZIP tohoto tréninku znovu.";
+        elements.lapNote.textContent = hasTelemetry(gpsLap) ? "Barevná stopa: červená označuje nejpomalejší a zelená nejrychlejší místa. Body zpomalování se zobrazují jen v Dynamice jízdy, pokud je potvrdí více kol. Graf je srovnaný podle ujeté vzdálenosti; žlutě rychlost, modře otáčky." : "GPS stopa je dostupná, ale detailní rychlost a otáčky ještě nejsou uložené. Nahraj původní ZIP tohoto tréninku znovu.";
         Array.from(elements.dataLaps.children).forEach(function (button) { button.classList.toggle("is-active", Number(button.dataset.lap) === Number(lapNumber)); });
       }
 
       function renderDataLaps(session) {
         elements.dataLaps.innerHTML = "";
+        var validNumbers = new Set(analysisLaps(session).map(function (lap) { return lap.lap; }));
         session.laps.forEach(function (lap) {
           var button = document.createElement("button");
           button.type = "button"; button.className = "kp-data-lap"; button.dataset.lap = lap.lap;
-          button.innerHTML = "<span>K" + lap.lap + "</span><strong>" + formatLapTime(lap.ms) + "</strong><small>" + (lap.ms === session.bestMs ? "BEST" : "+" + formatLapTime(lap.ms - session.bestMs)) + "</small>";
+          button.innerHTML = "<span>K" + lap.lap + "</span><strong>" + formatLapTime(lap.ms) + "</strong><small>" + (!validNumbers.has(lap.lap) ? "MIMO ANALÝZU" : lap.ms === session.bestMs ? "BEST" : "+" + formatLapTime(lap.ms - session.bestMs)) + "</small>";
           button.addEventListener("click", function () { renderLapDetail(session, lap.lap); });
           elements.dataLaps.appendChild(button);
         });
@@ -2255,18 +2360,16 @@
 
       function fillLapSelect(select, session, selected) {
         select.innerHTML = "";
-        session.laps.forEach(function (lap) { var option = document.createElement("option"); option.value = lap.lap; option.textContent = "Kolo " + lap.lap + " · " + formatLapTime(lap.ms); option.selected = lap.lap === selected; select.appendChild(option); });
+        var validNumbers = new Set(analysisLaps(session).map(function (lap) { return lap.lap; }));
+        session.laps.forEach(function (lap) { var option = document.createElement("option"); option.value = lap.lap; option.textContent = "Kolo " + lap.lap + " · " + formatLapTime(lap.ms) + (validNumbers.has(lap.lap) ? "" : " · mimo analýzu"); option.selected = lap.lap === selected; select.appendChild(option); });
       }
 
       function lapDistanceSamples(gpsLap, count) {
         if (!hasTelemetry(gpsLap)) return [];
-        var cumulative = [0];
-        for (var i = 1; i < gpsLap.points.length; i += 1) cumulative.push(cumulative[i - 1] + gpsDistance(gpsLap.points[i - 1], gpsLap.points[i]));
-        var total = cumulative[cumulative.length - 1], samples = [];
+        var progress = telemetryProgress(gpsLap), samples = [];
+        if (!progress) return [];
         for (var step = 0; step < count; step += 1) {
-          var target = step / (count - 1) * total, index = 0;
-          while (index + 1 < cumulative.length && cumulative[index + 1] < target) index += 1;
-          samples.push({ fraction: step / (count - 1), index: index, elapsed: index / Math.max(1, gpsLap.points.length - 1) * gpsLap.ms, speed: gpsLap.points[index][2], point: gpsLap.points[index] });
+          samples.push(telemetrySampleAtFraction(gpsLap, step / Math.max(1, count - 1), progress));
         }
         return samples;
       }
@@ -2287,7 +2390,7 @@
         svg.appendChild(createSvgElement("polyline", { points: deltas.map(function (item) { return (left + item.fraction * (width - left - right)) + "," + (zeroY + item.value / maxAbs * (deltaBottom - deltaTop) / 2); }).join(" "), fill: "none", stroke: "#ff5964", "stroke-width": "2" }));
         svg.appendChild(createSvgElement("text", { x: left, y: 15, fill: "var(--primary)", "font-size": "12", "font-weight": "700" }, "Rychlost kola A"));
         svg.appendChild(createSvgElement("text", { x: left + 145, y: 15, fill: "var(--viz-series-2)", "font-size": "12", "font-weight": "700" }, "Rychlost kola B"));
-        svg.appendChild(createSvgElement("text", { x: left, y: deltaTop - 5, fill: "#ff7c85", "font-size": "12", "font-weight": "700" }, "Průběžná ztráta B proti A"));
+        svg.appendChild(createSvgElement("text", { x: left, y: deltaTop - 5, fill: "#ff7c85", "font-size": "12", "font-weight": "700" }, "Průběžný rozdíl B proti A"));
         [0, .25, .5, .75, 1].forEach(function (fraction) { svg.appendChild(createSvgElement("text", { x: left + fraction * (width - left - right), y: 244, "text-anchor": "middle", fill: "var(--muted-foreground)", "font-size": "11" }, Math.round(fraction * 100) + " %")); });
         return deltas;
       }
@@ -2306,37 +2409,40 @@
         drawTelemetryMap(elements.compareMap, [gpsA && gpsA.points, gpsB && gpsB.points], session.track, "compare");
         var deltas = drawComparisonChart(elements.compareChart, gpsA, gpsB);
         if (deltas.length) {
-          var worst = deltas.slice().sort(function (a, b) { return b.value - a.value; })[0];
+          var largestDifference = deltas.slice().sort(function (a, b) { return Math.abs(b.value) - Math.abs(a.value); })[0];
           var speedGap = deltas.slice().sort(function (a, b) { return Math.abs(b.speedDifference) - Math.abs(a.speedDifference); })[0];
-          appendRecordItem(elements.compareStats, "Největší průběžná ztráta B", "+" + formatLapTime(Math.max(0, worst.value)) + " s", "přibližně v " + Math.round(worst.fraction * 100) + " % délky kola");
+          appendRecordItem(elements.compareStats, "Největší průběžný rozdíl", (largestDifference.value >= 0 ? "+" : "−") + formatLapTime(Math.abs(largestDifference.value)) + " s", (largestDifference.value >= 0 ? "B ztrácí" : "B je napřed") + " přibližně v " + Math.round(largestDifference.fraction * 100) + " % délky kola");
           appendRecordItem(elements.compareStats, "Největší rozdíl rychlosti", (speedGap.speedDifference >= 0 ? "+" : "−") + Math.abs(speedGap.speedDifference).toFixed(1).replace(".", ",") + " km/h", "kolo B proti A · " + Math.round(speedGap.fraction * 100) + " % tratě");
         }
       }
 
       function detectCorners(gpsLap) {
         if (!hasTelemetry(gpsLap)) return [];
-        var points = gpsLap.points, candidates = [];
-        for (var i = 5; i < points.length - 5; i += 1) {
-          if (!Number.isFinite(points[i][2])) continue;
-          var local = points.slice(i - 5, i + 6).map(function (point) { return point[2]; });
-          if (points[i][2] === Math.min.apply(null, local)) candidates.push({ index: i, point: points[i], speed: points[i][2] });
+        var samples = lapDistanceSamples(gpsLap, 301), candidates = [];
+        for (var i = 5; i < samples.length - 5; i += 1) {
+          if (!Number.isFinite(samples[i].speed)) continue;
+          var local = samples.slice(i - 5, i + 6).map(function (sample) { return sample.speed; });
+          if (samples[i].speed === Math.min.apply(null, local)) candidates.push({ index: samples[i].index, fraction: samples[i].fraction, point: samples[i].point, speed: samples[i].speed });
         }
         return candidates.sort(function (a, b) { return a.speed - b.speed; }).reduce(function (chosen, item) {
-          if (chosen.every(function (other) { return Math.abs(other.index - item.index) > 16; })) chosen.push(item);
+          if (chosen.every(function (other) { return Math.abs(other.fraction - item.fraction) > .05; })) chosen.push(item);
           return chosen;
-        }, []).slice(0, 8).sort(function (a, b) { return a.index - b.index; });
+        }, []).slice(0, 8).sort(function (a, b) { return a.fraction - b.fraction; });
       }
 
       function renderCorners(session) {
-        var gpsLap = gpsLapFor(session, session.bestLap), corners = detectCorners(gpsLap), telemetryLaps = (session.gpsLaps || []).filter(hasTelemetry);
+        var telemetryLaps = (session.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(session, lap); });
+        var gpsLap = gpsLapFor(session, session.bestLap);
+        if (!hasTelemetry(gpsLap)) gpsLap = telemetryLaps.slice().sort(function (a, b) { return a.ms - b.ms; })[0];
+        var corners = detectCorners(gpsLap);
         elements.cornerGrid.innerHTML = "";
         drawTelemetryMap(elements.cornerMap, gpsLap ? [gpsLap.points] : [], session.track, "speed", corners.map(function (corner, index) { return { point: corner.point, text: "Z" + (index + 1) }; }));
         corners.forEach(function (corner, index) {
-          var fraction = corner.index / Math.max(1, gpsLap.points.length - 1), entries = [], apexes = [], exits = [];
+          var fraction = Number.isFinite(corner.fraction) ? corner.fraction : telemetryFractionAtIndex(gpsLap, corner.index), entries = [], apexes = [], exits = [];
           telemetryLaps.forEach(function (lap) {
-            var center = Math.round(fraction * (lap.points.length - 1)), radius = Math.max(5, Math.round(lap.points.length * .025));
-            var window = lap.points.slice(Math.max(0, center - radius), Math.min(lap.points.length, center + radius + 1));
-            var entry = lap.points[Math.max(0, center - radius * 2)], exit = lap.points[Math.min(lap.points.length - 1, center + radius * 2)];
+            var window = lapDistanceSamples(lap, 301).filter(function (sample) { return Math.abs(sample.fraction - fraction) <= .025; }).map(function (sample) { return sample.point; });
+            var entrySample = telemetrySampleAtFraction(lap, fraction - .05), exitSample = telemetrySampleAtFraction(lap, fraction + .05);
+            var entry = entrySample && entrySample.point, exit = exitSample && exitSample.point;
             if (entry && Number.isFinite(entry[2])) entries.push(entry[2]);
             if (exit && Number.isFinite(exit[2])) exits.push(exit[2]);
             var minimum = Math.min.apply(null, window.map(function (point) { return point[2]; }).filter(Number.isFinite));
@@ -2346,7 +2452,7 @@
           var apexAverage = apexes.reduce(function (sum, value) { return sum + value; }, 0) / Math.max(1, apexes.length);
           var exitAverage = exits.reduce(function (sum, value) { return sum + value; }, 0) / Math.max(1, exits.length);
           var deviation = standardDeviation(apexes), bestApex = apexes.length ? Math.max.apply(null, apexes) : 0;
-          appendRecordItem(elements.cornerGrid, "Zatáčka Z" + (index + 1), apexAverage.toFixed(1).replace(".", ",") + " km/h", "průměrné minimum · nejlepší " + bestApex.toFixed(1).replace(".", ",") + " km/h");
+          appendRecordItem(elements.cornerGrid, "Zatáčka Z" + (index + 1), apexAverage.toFixed(1).replace(".", ",") + " km/h", "průměrné minimum · nejvyšší minimum " + bestApex.toFixed(1).replace(".", ",") + " km/h");
           appendRecordItem(elements.cornerGrid, "Z" + (index + 1) + " · průjezd", entryAverage.toFixed(1).replace(".", ",") + " → " + apexAverage.toFixed(1).replace(".", ",") + " → " + exitAverage.toFixed(1).replace(".", ","), "nájezd → minimum → výjezd · km/h");
           appendRecordItem(elements.cornerGrid, "Z" + (index + 1) + " · opakovatelnost", "±" + deviation.toFixed(1).replace(".", ",") + " km/h", apexes.length + " porovnaných kol");
         });
@@ -2360,7 +2466,7 @@
           var before = gpsLap.points[index - span][2], after = gpsLap.points[index][2];
           if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
           var acceleration = ((after - before) / 3.6) / Math.max(.01, dt);
-          if (acceleration < -.15) candidates.push({ index: index, fraction: index / (gpsLap.points.length - 1), value: acceleration, point: gpsLap.points[index] });
+          if (acceleration < -.15) candidates.push({ index: index, fraction: telemetryFractionAtIndex(gpsLap, index), value: acceleration, point: gpsLap.points[index] });
         }
         var minimumGap = Math.max(12, Math.round(gpsLap.points.length * .065));
         return candidates.sort(function (a, b) { return a.value - b.value; }).reduce(function (chosen, item) {
@@ -2371,20 +2477,22 @@
 
       function analyzeBrakingZones(referenceLap, telemetryLaps, trackLength) {
         var referenceZones = brakingCandidates(referenceLap, 5);
+        if (telemetryLaps.length < 3) return { zones: [], reliableZones: [], worst: null, strongest: null, resolution: trackLength / Math.max(1, referenceLap.points.length) };
         var averagePointCount = telemetryLaps.length ? telemetryLaps.reduce(function (sum, lap) { return sum + lap.points.length; }, 0) / telemetryLaps.length : referenceLap.points.length;
         var gpsResolution = trackLength / Math.max(1, averagePointCount);
         var reliableLimit = Math.min(8, Math.max(4, gpsResolution * 3));
         var zones = referenceZones.map(function (reference, zoneIndex) {
           var positions = [], intensities = [];
           telemetryLaps.forEach(function (lap) {
-            var center = Math.round(reference.fraction * (lap.points.length - 1));
+            var centerSample = telemetrySampleAtFraction(lap, reference.fraction);
+            var center = centerSample ? Math.round(centerSample.index) : Math.round(reference.fraction * (lap.points.length - 1));
             var radius = Math.max(8, Math.round(lap.points.length * .035));
             var span = 5, dt = lap.ms / Math.max(1, lap.points.length - 1) / 1000 * span, strongest = null;
             for (var index = Math.max(span, center - radius); index <= Math.min(lap.points.length - 1, center + radius); index += 1) {
               var before = lap.points[index - span][2], after = lap.points[index][2];
               if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
               var value = ((after - before) / 3.6) / Math.max(.01, dt);
-              if (!strongest || value < strongest.value) strongest = { fraction: index / (lap.points.length - 1), value: value };
+              if (!strongest || value < strongest.value) strongest = { fraction: telemetryFractionAtIndex(lap, index), value: value };
             }
             if (strongest && strongest.value < -.15) { positions.push(strongest.fraction); intensities.push(strongest.value); }
           });
@@ -2403,9 +2511,9 @@
         return { zones: zones, reliableZones: reliableZones, worst: reliableZones.slice().sort(function (a, b) { return b.spread - a.spread; })[0], strongest: reliableZones.slice().sort(function (a, b) { return a.intensity - b.intensity; })[0], resolution: gpsResolution };
       }
 
-      function trackPositionDescription(fraction, corners, pointCount) {
+      function trackPositionDescription(fraction, corners, referenceLap) {
         if (!corners.length) return "kolem " + Math.round(fraction * 100) + " % kola";
-        var positions = corners.map(function (corner, index) { return { index: index + 1, fraction: corner.index / Math.max(1, pointCount - 1) }; });
+        var positions = corners.map(function (corner, index) { return { index: index + 1, fraction: Number.isFinite(corner.fraction) ? corner.fraction : telemetryFractionAtIndex(referenceLap, corner.index) }; });
         var nearest = positions.slice().sort(function (a, b) { return Math.abs(a.fraction - fraction) - Math.abs(b.fraction - fraction); })[0];
         if (Math.abs(nearest.fraction - fraction) <= .035) return "v okolí Z" + nearest.index;
         var previous = positions.filter(function (item) { return item.fraction < fraction; }).slice(-1)[0];
@@ -2434,8 +2542,9 @@
       }
 
       function renderDynamics(session) {
-        var validLapNumbers = new Set(session.laps.filter(function (lap) { return lap.ms >= session.bestMs && lap.ms <= session.bestMs + 5000; }).map(function (lap) { return lap.lap; }));
-        var telemetryLaps = (session.gpsLaps || []).filter(function (lap) { return hasTelemetry(lap) && validLapNumbers.has(lap.lap); }), bestGps = gpsLapFor(session, session.bestLap);
+        var telemetryLaps = (session.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(session, lap); });
+        var bestGps = gpsLapFor(session, session.bestLap);
+        if (!hasTelemetry(bestGps)) bestGps = telemetryLaps.slice().sort(function (a, b) { return a.ms - b.ms; })[0];
         elements.dynamicsStats.innerHTML = "";
         elements.dynamicsCorners.innerHTML = "";
         elements.dynamicsAdvice.textContent = "";
@@ -2448,30 +2557,30 @@
         var comparisonLaps = telemetryLaps.filter(function (lap) { return lap.lap !== bestGps.lap; });
         var trackLength = gpsPathDistance(bestGps.points);
         var corners = detectCorners(bestGps);
-        var braking = analyzeBrakingZones(bestGps, telemetryLaps, trackLength);
-        var repeatability = lineRepeatability(bestGps, telemetryLaps);
+        var braking = analyzeBrakingZones(bestGps, comparisonLaps, trackLength);
+        var repeatability = comparisonLaps.length ? lineRepeatability(bestGps, comparisonLaps) : null;
         var repeatabilitySamples = lapDistanceSamples(bestGps, 101);
         var repeatabilityPoint = repeatability && repeatabilitySamples.length ? repeatabilitySamples[Math.max(0, Math.min(100, Math.round(repeatability.worst.fraction * 100)))].point : null;
-        var lineLocation = repeatability ? trackPositionDescription(repeatability.worst.fraction, corners, bestGps.points.length) : "";
-        var brakingLocation = braking.worst ? trackPositionDescription(braking.worst.fraction, corners, bestGps.points.length) : "";
+        var lineLocation = repeatability ? trackPositionDescription(repeatability.worst.fraction, corners, bestGps) : "";
+        var brakingLocation = braking.worst ? trackPositionDescription(braking.worst.fraction, corners, bestGps) : "";
 
         var cornerResults = corners.map(function (corner, index) {
-          var fraction = corner.index / Math.max(1, bestGps.points.length - 1);
-          var referenceCenter = corner.index, referenceRadius = Math.max(5, Math.round(bestGps.points.length * .025));
-          var referenceWindow = bestGps.points.slice(Math.max(0, referenceCenter - referenceRadius), Math.min(bestGps.points.length, referenceCenter + referenceRadius + 1));
+          var fraction = Number.isFinite(corner.fraction) ? corner.fraction : telemetryFractionAtIndex(bestGps, corner.index);
+          var referenceWindow = lapDistanceSamples(bestGps, 301).filter(function (sample) { return Math.abs(sample.fraction - fraction) <= .025; }).map(function (sample) { return sample.point; });
           var referenceApex = Math.min.apply(null, referenceWindow.map(function (point) { return point[2]; }).filter(Number.isFinite));
-          var referenceExitPoint = bestGps.points[Math.min(bestGps.points.length - 1, referenceCenter + referenceRadius * 2)];
+          var referenceExitSample = telemetrySampleAtFraction(bestGps, fraction + .05);
+          var referenceExitPoint = referenceExitSample && referenceExitSample.point;
           var referenceExit = referenceExitPoint && Number.isFinite(referenceExitPoint[2]) ? referenceExitPoint[2] : referenceApex;
           var apexLosses = [], exitLosses = [], lineOffsets = [];
 
           comparisonLaps.forEach(function (lap) {
-            var center = Math.round(fraction * (lap.points.length - 1)), radius = Math.max(5, Math.round(lap.points.length * .025));
-            var window = lap.points.slice(Math.max(0, center - radius), Math.min(lap.points.length, center + radius + 1));
+            var window = lapDistanceSamples(lap, 301).filter(function (sample) { return Math.abs(sample.fraction - fraction) <= .025; }).map(function (sample) { return sample.point; });
             var speeds = window.map(function (point) { return point[2]; }).filter(Number.isFinite);
-            var exit = lap.points[Math.min(lap.points.length - 1, center + radius * 2)];
+            var centerSample = telemetrySampleAtFraction(lap, fraction), exitSample = telemetrySampleAtFraction(lap, fraction + .05);
+            var exit = exitSample && exitSample.point;
             if (speeds.length) apexLosses.push(referenceApex - Math.min.apply(null, speeds));
             if (exit && Number.isFinite(exit[2])) exitLosses.push(referenceExit - exit[2]);
-            if (lap.points[center]) lineOffsets.push(gpsDistance(corner.point, lap.points[center]));
+            if (centerSample) lineOffsets.push(gpsDistance(corner.point, centerSample.point));
           });
 
           var apexLoss = apexLosses.length ? apexLosses.reduce(function (sum, value) { return sum + value; }, 0) / apexLosses.length : 0;
@@ -2482,16 +2591,11 @@
 
         var weakCorner = cornerResults.length ? cornerResults.slice().sort(function (a, b) { return b.score - a.score; })[0] : null;
         var strongCorner = cornerResults.length ? cornerResults.slice().sort(function (a, b) { return a.score - b.score; })[0] : null;
-        var lapDistances = comparisonLaps.map(function (lap) { return { lap: lap.lap, extra: gpsPathDistance(lap.points) - trackLength }; }).filter(function (item) { return Number.isFinite(item.extra); });
-        var positiveExtra = lapDistances.map(function (item) { return Math.max(0, item.extra); });
-        var averageExtra = positiveExtra.length ? positiveExtra.reduce(function (sum, value) { return sum + value; }, 0) / positiveExtra.length : 0;
-        var worstDistance = lapDistances.length ? lapDistances.slice().sort(function (a, b) { return b.extra - a.extra; })[0] : null;
 
         appendRecordItem(elements.dynamicsStats, "Silné místo", strongCorner ? "Z" + strongCorner.index : "—", strongCorner ? "nejblíže nejlepšímu kolu" : "bez rozpoznaných zatáček");
         appendRecordItem(elements.dynamicsStats, "Největší prostor", weakCorner ? "Z" + weakCorner.index : "—", weakCorner ? "výjezd −" + Math.max(0, weakCorner.exitLoss).toFixed(1).replace(".", ",") + " km/h · stopa " + weakCorner.line.toFixed(1).replace(".", ",") + " m" : "bez rozpoznaných zatáček");
         if (braking.worst) appendRecordItem(elements.dynamicsStats, "Nástup zpomalování", braking.worst.label, brakingLocation + " · rozptyl ±" + braking.worst.spread.toFixed(1).replace(".", ",") + " m · GPS odhad");
         appendRecordItem(elements.dynamicsStats, "Stopa k ustálení", repeatability ? lineLocation : "—", repeatability ? "bod STOPA · odchylka " + repeatability.worst.value.toFixed(1).replace(".", ",") + " m" : "bez porovnání");
-        appendRecordItem(elements.dynamicsStats, "Zbytečná vzdálenost", averageExtra.toFixed(1).replace(".", ",") + " m/kolo", worstDistance ? "nejvíce kolo " + worstDistance.lap + " · +" + Math.max(0, worstDistance.extra).toFixed(1).replace(".", ",") + " m" : "proti nejlepšímu kolu");
 
         function addFinding(title, place, evidence, action, priority) {
           var block = document.createElement("div");
@@ -2536,15 +2640,6 @@
             repeatability.worst.value > 2.5
           );
         }
-        if (worstDistance && worstDistance.extra > 1) {
-          addFinding(
-            "Délka stopy",
-            "kolo " + worstDistance.lap,
-            "Toto kolo bylo proti nejlepšímu kolu přibližně o " + worstDistance.extra.toFixed(1).replace(".", ",") + " m delší. Průměr ostatních kol je delší o " + averageExtra.toFixed(1).replace(".", ",") + " m.",
-            "omez zbytečné oblouky hlavně v bodě STOPA a ve slabé zatáčce Z" + (weakCorner ? weakCorner.index : "—") + ".",
-            false
-          );
-        }
         if (strongCorner) {
           addFinding(
             "Silné místo",
@@ -2574,7 +2669,9 @@
       }
 
       function renderEngine(session) {
-        var gpsLap = gpsLapFor(session, session.bestLap), telemetryLaps = (session.gpsLaps || []).filter(hasTelemetry);
+        var telemetryLaps = (session.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(session, lap); });
+        var gpsLap = gpsLapFor(session, session.bestLap);
+        if (!hasTelemetry(gpsLap)) gpsLap = telemetryLaps.slice().sort(function (a, b) { return a.ms - b.ms; })[0];
         elements.engineStats.innerHTML = "";
         if (!hasTelemetry(gpsLap)) {
           elements.engineChart.innerHTML = "";
@@ -2610,22 +2707,21 @@
 
       function renderCoach(session) {
         elements.coachStats.innerHTML = "";
-        var valid = session.laps.filter(function (lap) { return lap.ms >= session.bestMs && lap.ms <= session.bestMs + 5000; });
+        var valid = analysisLaps(session);
         var consistency = calculateConsistency(session);
         var topThree = valid.slice().sort(function (a, b) { return a.ms - b.ms; }).slice(0, 3);
         var topAverage = averageMs(topThree);
         var firstThree = valid.slice(0, 3), lastThree = valid.slice(-3);
         var paceChange = averageMs(lastThree) - averageMs(firstThree);
-        var telemetryLaps = (session.gpsLaps || []).filter(hasTelemetry);
+        var telemetryLaps = (session.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(session, lap); });
         var studyLap = telemetryLaps.slice().sort(function (a, b) { return a.ms - b.ms; })[0];
         var reference = gpsLapFor(session, session.bestLap) || studyLap;
         var corners = detectCorners(reference);
         var cornerStats = corners.map(function (corner, index) {
-          var fraction = corner.index / Math.max(1, reference.points.length - 1);
+          var fraction = Number.isFinite(corner.fraction) ? corner.fraction : telemetryFractionAtIndex(reference, corner.index);
           var speeds = telemetryLaps.map(function (lap) {
-            var center = Math.round(fraction * (lap.points.length - 1));
-            var radius = Math.max(3, Math.round(lap.points.length * .025));
-            return Math.min.apply(null, lap.points.slice(Math.max(0, center - radius), Math.min(lap.points.length, center + radius + 1)).map(function (point) { return point[2]; }).filter(Number.isFinite));
+            var window = lapDistanceSamples(lap, 301).filter(function (sample) { return Math.abs(sample.fraction - fraction) <= .025; });
+            return Math.min.apply(null, window.map(function (sample) { return sample.speed; }).filter(Number.isFinite));
           }).filter(Number.isFinite);
           return { number: index + 1, average: speeds.length ? speeds.reduce(function (sum, speed) { return sum + speed; }, 0) / speeds.length : 0, deviation: standardDeviation(speeds), range: speeds.length ? Math.max.apply(null, speeds) - Math.min.apply(null, speeds) : 0 };
         }).filter(function (corner) { return corner.average > 0; });
@@ -2634,7 +2730,7 @@
         appendRecordItem(elements.coachStats, "Tempo Top 3", formatLapTime(topAverage) + " s", "průměr tří nejrychlejších kol");
         appendRecordItem(elements.coachStats, "Konzistence", consistency.percent + " %", consistency.count + " z " + consistency.total + " kol do +0,5 s");
         appendRecordItem(elements.coachStats, "Studijní kolo", studyLap ? "Kolo " + studyLap.lap : "Kolo " + session.bestLap, studyLap ? formatLapTime(studyLap.ms) + " s · kompletní telemetrie" : formatLapTime(session.bestMs) + " s");
-        appendRecordItem(elements.coachStats, "Největší rezerva", weakest ? "Zatáčka Z" + weakest.number : "—", weakest ? "rozptyl minimální rychlosti " + weakest.range.toFixed(1).replace(".", ",") + " km/h" : "nahraj ZIP znovu pro telemetrii");
+        appendRecordItem(elements.coachStats, "Nejméně opakovatelná", weakest ? "Zatáčka Z" + weakest.number : "—", weakest ? "rozptyl minimální rychlosti " + weakest.range.toFixed(1).replace(".", ",") + " km/h" : "nahraj ZIP znovu pro telemetrii");
         if (weakest) elements.coachPriority.textContent = "Zaměř se na opakovatelnost v zatáčce Z" + weakest.number + ". Minimální rychlost se mezi koly lišila až o " + weakest.range.toFixed(1).replace(".", ",") + " km/h. Nehledej zatím vyšší absolutní rychlost; cílem je stejný nájezd a stejný bod přidání plynu ve třech kolech za sebou.";
         else elements.coachPriority.textContent = consistency.percent < 70 ? "Prioritou je stabilita: pokus se zajet alespoň tři po sobě jdoucí kola do půl sekundy od nejlepšího času." : "Tempo je stabilní. Pro podrobnou analýzu místa ztráty nahraj původní ZIP tohoto tréninku znovu.";
         if (!Number.isFinite(paceChange)) elements.coachPace.textContent = "Pro srovnání začátku a závěru je potřeba více platných kol.";
@@ -2655,10 +2751,11 @@
         sessions.forEach(function (session, index) { var option = document.createElement("option"); option.value = index; option.textContent = session.track + " · " + session.date + " " + session.time + ((session.gpsLaps || []).some(hasTelemetry) ? " · TELEMETRIE" : ""); elements.dataSession.appendChild(option); });
         elements.dataSession.value = previous && Number(previous) < sessions.length ? previous : String(sessions.length - 1);
         var session = selectedDataSession();
+        var validLaps = analysisLaps(session);
         elements.dataCenterCopy.textContent = session.track + " · " + session.date + " · " + session.time + " · " + session.laps.length + " kol";
         renderDataOverview(session); renderDataLaps(session);
         fillLapSelect(elements.compareA, session, session.bestLap);
-        fillLapSelect(elements.compareB, session, session.laps[session.laps.length - 1].lap);
+        fillLapSelect(elements.compareB, session, (validLaps[validLaps.length - 1] || session.laps[session.laps.length - 1]).lap);
         renderComparison(session); renderCorners(session); renderDynamics(session); renderEngine(session); renderCoach(session);
       }
 
@@ -2794,26 +2891,22 @@
       }
 
       function applyVirtualSectors(sessions) {
-        var changed = false;
         var groups = {};
         sessions.forEach(function (session) {
+          normalizeAlfanoSession(session);
+          session.virtualSectors = [];
           if (!Array.isArray(session.gpsLaps) || !session.gpsLaps.length) return;
-          var key = trackRecordKey(session.track);
+          var key = trackConfigurationKey(session);
           if (!groups[key]) groups[key] = [];
           groups[key].push(session);
         });
         Object.keys(groups).forEach(function (key) {
           var candidates = groups[key].flatMap(function (session) {
             return session.gpsLaps.map(function (lap) { return { session: session, lap: lap }; });
-          }).filter(function (item) { return item.lap.points.length > 100 && item.lap.ms <= item.session.bestMs + 5000; });
+          }).filter(function (item) { return telemetryLapIsAnalyzable(item.session, item.lap); });
           if (!candidates.length) return;
           var reference = candidates.reduce(function (best, item) { return item.lap.ms < best.lap.ms ? item : best; }, candidates[0]);
-          var profile = alfanoSectorProfiles[key];
-          if (!profile || !Array.isArray(profile.gates) || profile.gates.length !== 2) {
-            profile = { track: reference.session.track, gates: [gpsGateAtFraction(reference.lap.points, 1 / 3), gpsGateAtFraction(reference.lap.points, 2 / 3)], bestSectors: [null, null, null], bestSectorPaths: [null, null, null], bestSectorSources: [null, null, null] };
-          }
-          if (!Array.isArray(profile.bestSectorPaths)) profile.bestSectorPaths = [null, null, null];
-          if (!Array.isArray(profile.bestSectorSources)) profile.bestSectorSources = [null, null, null];
+          var profile = { track: reference.session.track, configurationKey: key, gates: [gpsGateAtFraction(reference.lap.points, 1 / 3), gpsGateAtFraction(reference.lap.points, 2 / 3)], bestSectors: [null, null, null], bestSectorPaths: [null, null, null], bestSectorSources: [null, null, null] };
           profile.trackReferencePaths = candidates.slice().sort(function (a, b) { return a.lap.ms - b.lap.ms; }).slice(0, 12).map(function (item) {
             return item.lap.points.filter(function (point, index) { return index % 4 === 0 || index === item.lap.points.length - 1; });
           });
@@ -2825,8 +2918,9 @@
             var firstMs = item.lap.ms * first.position / last;
             var secondMs = item.lap.ms * second.position / last;
             var sectors = [firstMs, secondMs - firstMs, item.lap.ms - secondMs];
+            if (sectors.some(function (value) { return !Number.isFinite(value) || value <= 0; })) return;
             var sectorPaths = [sliceGpsPath(item.lap.points, 0, first.position), sliceGpsPath(item.lap.points, first.position, second.position), sliceGpsPath(item.lap.points, second.position, last)];
-            item.session.virtualSectors = (item.session.virtualSectors || []).concat([sectors]);
+            item.session.virtualSectors.push({ lap: item.lap.lap, sectors: sectors.map(Math.round) });
             sectors.forEach(function (value, index) {
               if (!Number.isFinite(profile.bestSectors[index]) || value < profile.bestSectors[index] || !Array.isArray(profile.bestSectorPaths[index])) {
                 profile.bestSectors[index] = value;
@@ -2843,11 +2937,24 @@
           if (profile.bestSectors.every(Number.isFinite)) {
             profile.theoreticalMs = Math.round(profile.bestSectors.reduce(function (sum, value) { return sum + value; }, 0));
             alfanoSectorProfiles[key] = profile;
-            changed = true;
           }
         });
         // Zmenšené GPS body ponecháváme u tréninku pro Datové centrum.
-        if (changed) saveAlfanoSectorProfiles();
+        saveAlfanoSectorProfiles();
+      }
+
+      function rebuildTelemetryAnalytics(sessions) {
+        sessions.filter(alfanoSessionIsValid).forEach(normalizeAlfanoSession);
+        sessions.filter(alfanoSessionIsValid).forEach(function (session) {
+          var base = trackRecordKey(session.track), configuration = trackConfigurationKey(session);
+          if (configuration !== base) {
+            delete alfanoTrackRecords[base];
+            delete alfanoSectorProfiles[base];
+          }
+        });
+        applyVirtualSectors(sessions);
+        new Set(sessions.filter(alfanoSessionIsValid).map(trackConfigurationKey)).forEach(function (key) { delete alfanoTrackRecords[key]; });
+        updateAlfanoTrackRecords(sessions);
       }
 
       async function parseAlfanoZip(file) {
@@ -2871,7 +2978,7 @@
           var points = parseAlfanoGpsLap(fflate.strFromU8(entries[name]));
           if (points.length > 100) session.gpsLaps.push({ lap: lapNumber, ms: summaryLap.ms, points: points });
         });
-        return session;
+        return normalizeAlfanoSession(session);
       }
 
       function formatLapTime(milliseconds) {
@@ -2889,7 +2996,7 @@
       function renderIdealMap() {
         var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
         var latest = sorted[sorted.length - 1];
-        var profile = latest ? alfanoSectorProfiles[trackRecordKey(latest.track)] : null;
+        var profile = latest ? alfanoSectorProfiles[trackConfigurationKey(latest)] : null;
         var hasPaths = profile && Array.isArray(profile.bestLapPath) && Array.isArray(profile.bestSectorPaths) && profile.bestSectorPaths.every(Array.isArray);
         elements.idealMap.innerHTML = "";
         if (!hasPaths) {
@@ -3026,7 +3133,7 @@
       function currentRaceWeekendSessions(sortedSessions) {
         if (!sortedSessions.length) return [];
         var latest = sortedSessions[sortedSessions.length - 1];
-        var sameTrack = sortedSessions.filter(function (session) { return trackRecordKey(session.track) === trackRecordKey(latest.track); });
+        var sameTrack = sortedSessions.filter(function (session) { return trackConfigurationKey(session) === trackConfigurationKey(latest); });
         var weekend = [sameTrack[sameTrack.length - 1]];
         var cursor = sameTrack[sameTrack.length - 1].timestamp || 0;
         for (var index = sameTrack.length - 2; index >= 0; index -= 1) {
@@ -3061,8 +3168,8 @@
         var weekendSessions = currentRaceWeekendSessions(sorted);
         var latest = weekendSessions[weekendSessions.length - 1];
         var totalLaps = weekendSessions.reduce(function (total, session) { return total + session.laps.length; }, 0);
-        var record = alfanoTrackRecords[trackRecordKey(latest.track)] || { bestMs: latest.bestMs, bestLap: latest.bestLap, track: latest.track };
-        var sectorProfile = alfanoSectorProfiles[trackRecordKey(latest.track)];
+        var record = alfanoTrackRecords[trackConfigurationKey(latest)] || { bestMs: latest.bestMs, bestLap: latest.bestLap, track: latest.track };
+        var sectorProfile = alfanoSectorProfiles[trackConfigurationKey(latest)];
         var latestDelta = latest.bestMs - record.bestMs;
         var consistency = calculateConsistency(latest);
 
@@ -3095,15 +3202,14 @@
 
         try {
           var imported = await Promise.all(files.map(parseAlfanoZip));
-          applyVirtualSectors(imported);
           function sessionIdentity(session) {
             return [trackRecordKey(session.track), session.date || "", session.time || "", String(session.driver || "JJ").toLocaleUpperCase("cs-CZ")].join("|");
           }
           var bySession = new Map(alfanoSessions.map(function (session) { return [sessionIdentity(session), session]; }));
           imported.forEach(function (session) { bySession.set(sessionIdentity(session), session); });
           alfanoSessions = Array.from(bySession.values());
+          rebuildTelemetryAnalytics(alfanoSessions);
           await saveAlfanoSessions();
-          updateAlfanoTrackRecords(imported);
           renderAlfano();
           elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink" : imported.length < 5 ? " tréninky" : " tréninků") + " včetně GPS sektorů.";
           elements.alfanoFiles.value = "";
@@ -3489,7 +3595,7 @@
       restoreAlfanoTrackRecords();
       restoreAlfanoSectorProfiles();
       renderBackupStatus();
-      updateAlfanoTrackRecords(alfanoSessions);
+      rebuildTelemetryAnalytics(alfanoSessions);
       renderPdfStatus(false);
       renderAlfano();
       restoreLargeAlfanoStorage();
