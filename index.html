@@ -830,7 +830,7 @@
         </div>
       </div>
       <div class="kp-dialog-actions">
-        <button type="button" class="btn btn-ghost" id="kp-clear-alfano">Vymazat data víkendu</button>
+        <button type="button" class="btn btn-ghost" id="kp-clear-alfano">Vymazat všechny tréninky</button>
         <button type="button" class="btn btn-primary" id="kp-import-alfano">Načíst vybrané ZIPy</button>
       </div>
     </div>
@@ -2653,6 +2653,21 @@
         });
       }
 
+      function currentRaceWeekendSessions(sortedSessions) {
+        if (!sortedSessions.length) return [];
+        var latest = sortedSessions[sortedSessions.length - 1];
+        var sameTrack = sortedSessions.filter(function (session) { return trackRecordKey(session.track) === trackRecordKey(latest.track); });
+        var weekend = [sameTrack[sameTrack.length - 1]];
+        var cursor = sameTrack[sameTrack.length - 1].timestamp || 0;
+        for (var index = sameTrack.length - 2; index >= 0; index -= 1) {
+          var timestamp = sameTrack[index].timestamp || 0;
+          if (!timestamp || !cursor || cursor - timestamp > 4 * 24 * 60 * 60 * 1000) break;
+          weekend.unshift(sameTrack[index]);
+          cursor = timestamp;
+        }
+        return weekend;
+      }
+
       function renderAlfano() {
         var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) {
           return (a.timestamp || 0) - (b.timestamp || 0) || a.fileName.localeCompare(b.fileName);
@@ -2673,14 +2688,15 @@
           return;
         }
 
-        var latest = sorted[sorted.length - 1];
-        var totalLaps = sorted.reduce(function (total, session) { return total + session.laps.length; }, 0);
+        var weekendSessions = currentRaceWeekendSessions(sorted);
+        var latest = weekendSessions[weekendSessions.length - 1];
+        var totalLaps = weekendSessions.reduce(function (total, session) { return total + session.laps.length; }, 0);
         var record = alfanoTrackRecords[trackRecordKey(latest.track)] || { bestMs: latest.bestMs, bestLap: latest.bestLap, track: latest.track };
         var sectorProfile = alfanoSectorProfiles[trackRecordKey(latest.track)];
         var latestDelta = latest.bestMs - record.bestMs;
         var consistency = calculateConsistency(latest);
 
-        elements.alfanoSummary.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků") + " · " + latest.track + " · poslední " + latest.time;
+        elements.alfanoSummary.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink víkendu" : weekendSessions.length < 5 ? " tréninky víkendu" : " tréninků víkendu") + " · " + latest.track + " · poslední " + latest.time;
         elements.alfanoBest.textContent = formatLapTime(record.bestMs);
         elements.alfanoBestNote.textContent = (record.track || latest.track) + (record.bestLap ? " · kolo " + record.bestLap : "");
         elements.alfanoLatest.textContent = formatLapTime(latest.bestMs);
@@ -2690,8 +2706,8 @@
         elements.alfanoLaps.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? formatLapTime(sectorProfile.theoreticalMs) : "—";
         elements.alfanoLapsNote.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? "−" + formatLapTime(Math.max(0, record.bestMs - sectorProfile.theoreticalMs)) + " s potenciál · GPS" : "nahraj ZIPy znovu pro GPS";
         elements.alfanoTotalLaps.textContent = String(totalLaps);
-        elements.alfanoTotalLapsNote.textContent = sorted.length + (sorted.length === 1 ? " trénink" : sorted.length < 5 ? " tréninky" : " tréninků");
-        renderAlfanoChart(sorted);
+        elements.alfanoTotalLapsNote.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink tohoto víkendu" : weekendSessions.length < 5 ? " tréninky tohoto víkendu" : " tréninků tohoto víkendu");
+        renderAlfanoChart(weekendSessions);
       }
 
       async function importAlfanoFiles() {
