@@ -2371,6 +2371,9 @@
 
       function analyzeBrakingZones(referenceLap, telemetryLaps, trackLength) {
         var referenceZones = brakingCandidates(referenceLap, 5);
+        var averagePointCount = telemetryLaps.length ? telemetryLaps.reduce(function (sum, lap) { return sum + lap.points.length; }, 0) / telemetryLaps.length : referenceLap.points.length;
+        var gpsResolution = trackLength / Math.max(1, averagePointCount);
+        var reliableLimit = Math.min(8, Math.max(4, gpsResolution * 3));
         var zones = referenceZones.map(function (reference, zoneIndex) {
           var positions = [], intensities = [];
           telemetryLaps.forEach(function (lap) {
@@ -2385,15 +2388,19 @@
             }
             if (strongest && strongest.value < -.15) { positions.push(strongest.fraction); intensities.push(strongest.value); }
           });
+          var spread = standardDeviation(positions) * trackLength;
+          var offset = positions.length ? (positions.reduce(function (sum, value) { return sum + value; }, 0) / positions.length - reference.fraction) * trackLength : 0;
           return {
             label: "B" + (zoneIndex + 1), point: reference.point, fraction: reference.fraction,
             intensity: intensities.length ? intensities.reduce(function (sum, value) { return sum + value; }, 0) / intensities.length : reference.value,
-            spread: standardDeviation(positions) * trackLength,
-            offset: positions.length ? (positions.reduce(function (sum, value) { return sum + value; }, 0) / positions.length - reference.fraction) * trackLength : 0,
-            samples: positions.length
+            spread: spread,
+            offset: offset,
+            samples: positions.length,
+            reliable: positions.length >= Math.max(3, Math.ceil(telemetryLaps.length * .7)) && spread <= reliableLimit && Math.abs(offset) <= reliableLimit
           };
         });
-        return { zones: zones, worst: zones.slice().sort(function (a, b) { return b.spread - a.spread; })[0], strongest: zones.slice().sort(function (a, b) { return a.intensity - b.intensity; })[0] };
+        var reliableZones = zones.filter(function (zone) { return zone.reliable; });
+        return { zones: zones, reliableZones: reliableZones, worst: reliableZones.slice().sort(function (a, b) { return b.spread - a.spread; })[0], strongest: reliableZones.slice().sort(function (a, b) { return a.intensity - b.intensity; })[0], resolution: gpsResolution };
       }
 
       function trackPositionDescription(fraction, corners, pointCount) {
@@ -2482,7 +2489,7 @@
 
         appendRecordItem(elements.dynamicsStats, "Silné místo", strongCorner ? "Z" + strongCorner.index : "—", strongCorner ? "nejblíže nejlepšímu kolu" : "bez rozpoznaných zatáček");
         appendRecordItem(elements.dynamicsStats, "Největší prostor", weakCorner ? "Z" + weakCorner.index : "—", weakCorner ? "výjezd −" + Math.max(0, weakCorner.exitLoss).toFixed(1).replace(".", ",") + " km/h · stopa " + weakCorner.line.toFixed(1).replace(".", ",") + " m" : "bez rozpoznaných zatáček");
-        appendRecordItem(elements.dynamicsStats, "Brzdění k ustálení", braking.worst ? braking.worst.label : "—", braking.worst ? brakingLocation + " · rozptyl ±" + braking.worst.spread.toFixed(1).replace(".", ",") + " m" : "bez rozpoznané brzdné zóny");
+        if (braking.worst) appendRecordItem(elements.dynamicsStats, "Nástup zpomalování", braking.worst.label, brakingLocation + " · rozptyl ±" + braking.worst.spread.toFixed(1).replace(".", ",") + " m · GPS odhad");
         appendRecordItem(elements.dynamicsStats, "Stopa k ustálení", repeatability ? lineLocation : "—", repeatability ? "bod STOPA · odchylka " + repeatability.worst.value.toFixed(1).replace(".", ",") + " m" : "bez porovnání");
         appendRecordItem(elements.dynamicsStats, "Zbytečná vzdálenost", averageExtra.toFixed(1).replace(".", ",") + " m/kolo", worstDistance ? "nejvíce kolo " + worstDistance.lap + " · +" + Math.max(0, worstDistance.extra).toFixed(1).replace(".", ",") + " m" : "proti nejlepšímu kolu");
 
@@ -2513,10 +2520,10 @@
         if (braking.worst) {
           var direction = Math.abs(braking.worst.offset) < .5 ? "v průměru na stejném místě jako nejlepší kolo" : "v průměru o " + Math.abs(braking.worst.offset).toFixed(1).replace(".", ",") + " m " + (braking.worst.offset > 0 ? "později" : "dříve") + " než v nejlepším kole";
           addFinding(
-            "Brzdný bod",
+            "Nástup zpomalování",
             braking.worst.label + " · " + brakingLocation,
-            "Brzdíš " + direction + ", ale jednotlivá kola mají rozptyl ±" + braking.worst.spread.toFixed(1).replace(".", ",") + " m. Bod je označen na mapě.",
-            "vyber si jeden pevný orientační bod u trati a začínej brzdění u něj ve všech kolech.",
+            "Z průběhu GPS rychlosti vychází začátek výrazného zpomalování " + direction + "; jednotlivá kola mají rozptyl ±" + braking.worst.spread.toFixed(1).replace(".", ",") + " m. Bod je označen na mapě.",
+            "vyber si jeden pevný orientační bod u trati a sjednoť u něj začátek zpomalování. Údaj ber jako srovnání kol, nikoli jako měření brzdového pedálu.",
             braking.worst.spread > 3
           );
         }
@@ -2558,7 +2565,7 @@
         if (weakCorner && (weakCorner.exitLoss > .5 || weakCorner.apexLoss > .5)) {
           elements.dynamicsAdvice.textContent = "Hlavní úkol pro další jízdu: Z" + weakCorner.index + ". " + (weakCorner.exitLoss > weakCorner.apexLoss ? "Zlepši výjezd a porovnej začátek akcelerace s nejlepším kolem." : "Udrž vyšší rychlost v místě vrcholu a zopakuj stopu nejlepšího kola.");
         } else if (braking.worst && braking.worst.spread > 3) {
-          elements.dynamicsAdvice.textContent = "Hlavní úkol pro další jízdu: ustálit brzdný bod " + braking.worst.label + " " + brakingLocation + " na jednom orientačním bodu.";
+          elements.dynamicsAdvice.textContent = "Hlavní úkol pro další jízdu: ustálit nástup zpomalování " + braking.worst.label + " " + brakingLocation + " podle jednoho orientačního bodu.";
         } else if (repeatability && repeatability.worst.value > 2) {
           elements.dynamicsAdvice.textContent = "Hlavní úkol pro další jízdu: zopakovat stopu nejlepšího kola v bodě STOPA " + lineLocation + ".";
         } else {
