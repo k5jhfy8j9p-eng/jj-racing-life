@@ -393,6 +393,16 @@
       box-shadow: 0 0 22px rgba(255, 212, 0, .16);
     }
 
+    #karting-program-app .kp-team-card.is-signal-pulse {
+      animation: kp-signal-pulse .48s ease-out;
+    }
+
+    @keyframes kp-signal-pulse {
+      0% { box-shadow: 0 0 0 2px rgba(0, 143, 232, .15), 0 0 34px rgba(0, 143, 232, .24); }
+      32% { border-color: #ffe600; box-shadow: 0 0 0 5px rgba(255, 230, 0, .72), 0 0 70px rgba(255, 212, 0, .82); filter: brightness(1.38); }
+      100% { box-shadow: 0 0 0 2px rgba(0, 143, 232, .15), 0 0 34px rgba(0, 143, 232, .24); }
+    }
+
     #karting-program-app .kp-next-card {
       grid-column: 3;
       display: grid;
@@ -1050,6 +1060,9 @@
 
       var departureAudioContext = null;
       var lastDepartureAlarmKey = "";
+      var departureSequenceToken = 0;
+      var departureSequenceLabel = "";
+      var departureSequenceUntil = 0;
 
       function ensureDepartureAudio() {
         if (!state.sound) return null;
@@ -1063,20 +1076,66 @@
       function playDepartureAlarm() {
         var context = ensureDepartureAudio();
         if (!context || context.state !== "running") return false;
-        var start = context.currentTime + .03;
-        [0, .28, .56].forEach(function (offset, index) {
+        var token = ++departureSequenceToken;
+        var start = context.currentTime + .05;
+        [0, 1, 2, 3, 4].forEach(function (offset, index) {
           var oscillator = context.createOscillator();
           var gain = context.createGain();
-          oscillator.type = "square";
-          oscillator.frequency.setValueAtTime(index === 2 ? 1040 : 820, start + offset);
+          oscillator.type = "sine";
+          oscillator.frequency.setValueAtTime(680 + index * 85, start + offset);
           gain.gain.setValueAtTime(.0001, start + offset);
-          gain.gain.exponentialRampToValueAtTime(.16, start + offset + .018);
-          gain.gain.exponentialRampToValueAtTime(.0001, start + offset + .19);
+          gain.gain.exponentialRampToValueAtTime(.19, start + offset + .018);
+          gain.gain.exponentialRampToValueAtTime(.0001, start + offset + .24);
           oscillator.connect(gain);
           gain.connect(context.destination);
           oscillator.start(start + offset);
-          oscillator.stop(start + offset + .21);
+          oscillator.stop(start + offset + .27);
+          window.setTimeout(function () {
+            if (token !== departureSequenceToken) return;
+            var number = 5 - index;
+            departureSequenceLabel = "ODJEZD ZA " + number;
+            departureSequenceUntil = Date.now() + 1150;
+            elements.teamCard.classList.remove("is-signal-pulse");
+            void elements.teamCard.offsetWidth;
+            elements.teamCard.classList.add("is-signal-pulse");
+            if ("speechSynthesis" in window) {
+              var utterance = new SpeechSynthesisUtterance(["pět", "čtyři", "tři", "dva", "jedna"][index]);
+              utterance.lang = "cs-CZ";
+              utterance.rate = 1.12;
+              utterance.volume = 1;
+              window.speechSynthesis.speak(utterance);
+            }
+            render();
+          }, offset * 1000);
         });
+        var finalOscillator = context.createOscillator();
+        var finalGain = context.createGain();
+        finalOscillator.type = "square";
+        finalOscillator.frequency.setValueAtTime(1120, start + 5);
+        finalOscillator.frequency.exponentialRampToValueAtTime(760, start + 5.62);
+        finalGain.gain.setValueAtTime(.0001, start + 5);
+        finalGain.gain.exponentialRampToValueAtTime(.22, start + 5.025);
+        finalGain.gain.exponentialRampToValueAtTime(.0001, start + 5.72);
+        finalOscillator.connect(finalGain);
+        finalGain.connect(context.destination);
+        finalOscillator.start(start + 5);
+        finalOscillator.stop(start + 5.75);
+        window.setTimeout(function () {
+          if (token !== departureSequenceToken) return;
+          departureSequenceLabel = "🏁 JEDEME!";
+          departureSequenceUntil = Date.now() + 2600;
+          elements.teamCard.classList.remove("is-signal-pulse");
+          void elements.teamCard.offsetWidth;
+          elements.teamCard.classList.add("is-signal-pulse");
+          if ("speechSynthesis" in window) {
+            var go = new SpeechSynthesisUtterance("Jedeme!");
+            go.lang = "cs-CZ";
+            go.rate = 1.02;
+            go.volume = 1;
+            window.speechSynthesis.speak(go);
+          }
+          render();
+        }, 5000);
         return true;
       }
 
@@ -1190,6 +1249,7 @@
         teamLabel: root.querySelector("#kp-team-label"),
         teamCount: root.querySelector("#kp-team-count"),
         prepAlert: root.querySelector("#kp-prep-alert"),
+        teamCard: root.querySelector(".kp-team-card"),
         nextIn: root.querySelector("#kp-next-in"),
         nextMain: root.querySelector("#kp-next-main"),
         nextMeta: root.querySelector("#kp-next-meta"),
@@ -3009,10 +3069,13 @@
         elements.teamLabel.textContent = "Do další jízdy JJ";
         elements.teamCount.textContent = formatDuration(untilStart);
 
-        if (untilPrep <= 0) {
+        var alarmKey = state.day + "|" + nextJunior.start + "|" + nextJunior.type;
+        if (state.sound && untilPrep <= 5 && lastDepartureAlarmKey !== alarmKey && playDepartureAlarm()) lastDepartureAlarmKey = alarmKey;
+
+        if (Date.now() < departureSequenceUntil && departureSequenceLabel) {
+          elements.prepAlert.textContent = departureSequenceLabel;
+        } else if (untilPrep <= 0) {
           elements.prepAlert.textContent = "PŘIPRAVIT · ODJEZD Z DEPA";
-          var alarmKey = state.day + "|" + nextJunior.start + "|" + nextJunior.type;
-          if (state.sound && lastDepartureAlarmKey !== alarmKey && playDepartureAlarm()) lastDepartureAlarmKey = alarmKey;
         } else {
           elements.prepAlert.textContent = "ODCHOD Z DEPA ZA " + shortDuration(untilPrep).toUpperCase();
         }
