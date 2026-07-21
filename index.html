@@ -1700,6 +1700,30 @@
         return null;
       }
 
+      function automaticAerialBackground(points, width, height) {
+        var valid = (points || []).filter(function (point) {
+          return point && Number.isFinite(point[0]) && Number.isFinite(point[1]);
+        });
+        if (!valid.length) return null;
+        var lats = valid.map(function (point) { return point[0]; });
+        var lons = valid.map(function (point) { return point[1]; });
+        var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
+        var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
+        var lonSpan = Math.max(.0004, maxLon - minLon) * 1.16;
+        var latSpan = Math.max(.0004, maxLat - minLat) * 1.16;
+        var aspect = width / height;
+        if (lonSpan / latSpan > aspect) latSpan = lonSpan / aspect;
+        else lonSpan = latSpan * aspect;
+        var centerLon = (minLon + maxLon) / 2, centerLat = (minLat + maxLat) / 2;
+        minLon = centerLon - lonSpan / 2; maxLon = centerLon + lonSpan / 2;
+        minLat = centerLat - latSpan / 2; maxLat = centerLat + latSpan / 2;
+        var bbox = [minLon, minLat, maxLon, maxLat].map(function (value) { return value.toFixed(7); }).join(",");
+        return {
+          src: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?bbox=" + bbox + "&bboxSR=4326&imageSR=4326&size=" + width + "," + height + "&format=jpg&f=image",
+          minLon: minLon, minLat: minLat, maxLon: maxLon, maxLat: maxLat
+        };
+      }
+
       function restoreAlfanoTrackRecords() {
         var saved = loadSetting("karting-alfano-track-records");
         if (!saved) return;
@@ -2002,6 +2026,7 @@
           background.minLat = 49.6887052727;
           background.maxLat = 49.6941947273;
         }
+        if (!background) background = automaticAerialBackground(paths.flat(), 900, 500);
         if (background) return { minLon: background.minLon, minLat: background.minLat, maxLon: background.maxLon, maxLat: background.maxLat, image: background.src };
         var points = paths.flat();
         var lats = points.map(function (point) { return point[0]; });
@@ -2573,6 +2598,10 @@
         }
         var allPoints = [profile.bestLapPath].concat(idealPaths).flat();
         var width = 1100, height = 888, padding = background ? 0 : 28;
+        if (!background) {
+          background = automaticAerialBackground(allPoints, width, height);
+          padding = background ? 0 : padding;
+        }
         elements.idealMap.setAttribute("viewBox", "0 0 " + width + " " + height);
         var minLon = background ? background.minLon : Math.min.apply(null, allPoints.map(function (point) { return point[1]; }));
         var maxLon = background ? background.maxLon : Math.max.apply(null, allPoints.map(function (point) { return point[1]; }));
