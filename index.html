@@ -2168,8 +2168,9 @@
         }
         (labels || []).forEach(function (label) {
           var p = xy(label.point);
-          svg.appendChild(createSvgElement("circle", { cx: p[0], cy: p[1], r: "12", fill: "var(--background)", stroke: "var(--primary)", "stroke-width": "3" }));
-          svg.appendChild(createSvgElement("text", { x: p[0], y: p[1] + 5, "text-anchor": "middle", fill: "white", "font-size": "12", "font-weight": "800" }, label.text));
+          var markerRadius = String(label.text || "").length > 3 ? 24 : 12;
+          svg.appendChild(createSvgElement("circle", { cx: p[0], cy: p[1], r: markerRadius, fill: "var(--background)", stroke: "var(--primary)", "stroke-width": "3" }));
+          svg.appendChild(createSvgElement("text", { x: p[0], y: p[1] + 5, "text-anchor": "middle", fill: "white", "font-size": markerRadius > 12 ? "10" : "12", "font-weight": "800" }, label.text));
         });
       }
 
@@ -2353,16 +2354,59 @@
         if (!corners.length) appendRecordItem(elements.cornerGrid, "Chybí detailní telemetrie", "Nahraj ZIP znovu", "poté se automaticky rozpoznají zatáčky");
       }
 
-      function strongestBrakingPoint(gpsLap) {
-        if (!hasTelemetry(gpsLap) || gpsLap.points.length < 12) return null;
-        var span = 5, dt = gpsLap.ms / Math.max(1, gpsLap.points.length - 1) / 1000 * span, strongest = null;
+      function brakingCandidates(gpsLap, count) {
+        if (!hasTelemetry(gpsLap) || gpsLap.points.length < 12) return [];
+        var span = 5, dt = gpsLap.ms / Math.max(1, gpsLap.points.length - 1) / 1000 * span, candidates = [];
         for (var index = span; index < gpsLap.points.length; index += 1) {
           var before = gpsLap.points[index - span][2], after = gpsLap.points[index][2];
           if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
           var acceleration = ((after - before) / 3.6) / Math.max(.01, dt);
-          if (!strongest || acceleration < strongest.value) strongest = { index: index, fraction: index / (gpsLap.points.length - 1), value: acceleration, point: gpsLap.points[index] };
+          if (acceleration < -.15) candidates.push({ index: index, fraction: index / (gpsLap.points.length - 1), value: acceleration, point: gpsLap.points[index] });
         }
-        return strongest;
+        var minimumGap = Math.max(12, Math.round(gpsLap.points.length * .065));
+        return candidates.sort(function (a, b) { return a.value - b.value; }).reduce(function (chosen, item) {
+          if (chosen.length < count && chosen.every(function (other) { return Math.abs(other.index - item.index) > minimumGap; })) chosen.push(item);
+          return chosen;
+        }, []).sort(function (a, b) { return a.index - b.index; });
+      }
+
+      function analyzeBrakingZones(referenceLap, telemetryLaps, trackLength) {
+        var referenceZones = brakingCandidates(referenceLap, 5);
+        var zones = referenceZones.map(function (reference, zoneIndex) {
+          var positions = [], intensities = [];
+          telemetryLaps.forEach(function (lap) {
+            var center = Math.round(reference.fraction * (lap.points.length - 1));
+            var radius = Math.max(8, Math.round(lap.points.length * .035));
+            var span = 5, dt = lap.ms / Math.max(1, lap.points.length - 1) / 1000 * span, strongest = null;
+            for (var index = Math.max(span, center - radius); index <= Math.min(lap.points.length - 1, center + radius); index += 1) {
+              var before = lap.points[index - span][2], after = lap.points[index][2];
+              if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
+              var value = ((after - before) / 3.6) / Math.max(.01, dt);
+              if (!strongest || value < strongest.value) strongest = { fraction: index / (lap.points.length - 1), value: value };
+            }
+            if (strongest && strongest.value < -.15) { positions.push(strongest.fraction); intensities.push(strongest.value); }
+          });
+          return {
+            label: "B" + (zoneIndex + 1), point: reference.point, fraction: reference.fraction,
+            intensity: intensities.length ? intensities.reduce(function (sum, value) { return sum + value; }, 0) / intensities.length : reference.value,
+            spread: standardDeviation(positions) * trackLength,
+            samples: positions.length
+          };
+        });
+        return { zones: zones, worst: zones.slice().sort(function (a, b) { return b.spread - a.spread; })[0], strongest: zones.slice().sort(function (a, b) { return a.intensity - b.intensity; })[0] };
+      }
+
+      function trackPositionDescription(fraction, corners, pointCount) {
+        if (!corners.length) return "kolem " + Math.round(fraction * 100) + " % kola";
+        var positions = corners.map(function (corner, index) { return { index: index + 1, fraction: corner.index / Math.max(1, pointCount - 1) }; });
+        var nearest = positions.slice().sort(function (a, b) { return Math.abs(a.fraction - fraction) - Math.abs(b.fraction - fraction); })[0];
+        if (Math.abs(nearest.fraction - fraction) <= .035) return "v okolí Z" + nearest.index;
+        var previous = positions.filter(function (item) { return item.fraction < fraction; }).slice(-1)[0];
+        var next = positions.find(function (item) { return item.fraction > fraction; });
+        if (previous && next) return "mezi Z" + previous.index + " a Z" + next.index;
+        if (next) return "před Z" + next.index;
+        if (previous) return "za Z" + previous.index;
+        return "kolem " + Math.round(fraction * 100) + " % kola";
       }
 
       function lineRepeatability(referenceLap, telemetryLaps) {
@@ -2419,16 +2463,19 @@
           appendRecordItem(elements.dynamicsStats, "Chybí detailní telemetrie", "Nahraj ZIP znovu", "potřebujeme GPS, rychlost a G-senzory");
           return;
         }
-        var braking = telemetryLaps.map(strongestBrakingPoint).filter(Boolean);
         var trackLength = gpsPathDistance(bestGps.points);
-        var brakingFractions = braking.map(function (item) { return item.fraction; });
-        var brakingSpread = standardDeviation(brakingFractions) * trackLength;
-        var strongest = braking.slice().sort(function (a, b) { return a.value - b.value; })[0];
+        var braking = analyzeBrakingZones(bestGps, telemetryLaps, trackLength);
+        var brakingSpread = braking.worst ? braking.worst.spread : 0;
+        var strongest = braking.strongest;
         var forces = telemetryLaps.map(function (lap) { return lap.points; }).flat().filter(function (point) { return Number.isFinite(point[4]) && Number.isFinite(point[5]); });
         var maxLateral = forces.length ? Math.max.apply(null, forces.map(function (point) { return Math.abs(point[5]); })) : 0;
         var maxCombined = forces.length ? Math.max.apply(null, forces.map(function (point) { return Math.sqrt(point[4] * point[4] + point[5] * point[5]); })) : 0;
         var repeatability = lineRepeatability(bestGps, telemetryLaps);
         var corners = detectCorners(bestGps);
+        var repeatabilitySamples = lapDistanceSamples(bestGps, 101);
+        var repeatabilityPoint = repeatability && repeatabilitySamples.length ? repeatabilitySamples[Math.max(0, Math.min(100, Math.round(repeatability.worst.fraction * 100)))].point : null;
+        var lineLocation = repeatability ? trackPositionDescription(repeatability.worst.fraction, corners, bestGps.points.length) : "";
+        var brakingLocation = braking.worst ? trackPositionDescription(braking.worst.fraction, corners, bestGps.points.length) : "";
         var cornerResults = corners.map(function (corner, index) {
           var fraction = corner.index / Math.max(1, bestGps.points.length - 1), exits = [], gains = [], lateralForces = [], lineOffsets = [];
           telemetryLaps.forEach(function (lap) {
@@ -2450,23 +2497,25 @@
         });
         var strongestExit = cornerResults.slice().sort(function (a, b) { return b.gain - a.gain; })[0];
         var weakestExit = cornerResults.slice().sort(function (a, b) { return a.gain - b.gain; })[0];
-        appendRecordItem(elements.dynamicsStats, "Nejsilnější brzdění", strongest ? Math.abs(strongest.value).toFixed(1).replace(".", ",") + " m/s²" : "—", strongest ? "přibližně v " + Math.round(strongest.fraction * 100) + " % kola" : "bez dat");
-        appendRecordItem(elements.dynamicsStats, "Opakovatelnost brzdného bodu", "±" + brakingSpread.toFixed(1).replace(".", ",") + " m", braking.length + " porovnaných kol");
+        appendRecordItem(elements.dynamicsStats, "Nejsilnější brzdění", strongest ? Math.abs(strongest.intensity).toFixed(1).replace(".", ",") + " m/s²" : "—", strongest ? strongest.label + " · " + trackPositionDescription(strongest.fraction, corners, bestGps.points.length) : "bez dat");
+        appendRecordItem(elements.dynamicsStats, "Nejméně stálý brzdný bod", braking.worst ? braking.worst.label + " · ±" + brakingSpread.toFixed(1).replace(".", ",") + " m" : "—", braking.worst ? brakingLocation + " · " + braking.worst.samples + " kol" : "bez dat");
         appendRecordItem(elements.dynamicsStats, "Max. boční přetížení", maxLateral.toFixed(2).replace(".", ",") + " g", "celý trénink");
         appendRecordItem(elements.dynamicsStats, "Kombinované maximum", maxCombined.toFixed(2).replace(".", ",") + " g", "brzdění a zatáčení");
         appendRecordItem(elements.dynamicsStats, "Průměrná odchylka stopy", repeatability ? repeatability.average.toFixed(1).replace(".", ",") + " m" : "—", "proti nejlepšímu kolu");
-        appendRecordItem(elements.dynamicsStats, "Nejméně jistý úsek", repeatability ? Math.round(repeatability.worst.fraction * 100) + " % kola" : "—", repeatability ? "odchylka " + repeatability.worst.value.toFixed(1).replace(".", ",") + " m" : "bez dat");
+        appendRecordItem(elements.dynamicsStats, "Nejméně jistý úsek", repeatability ? "STOPA · " + lineLocation : "—", repeatability ? "bod STOPA na mapě · odchylka " + repeatability.worst.value.toFixed(1).replace(".", ",") + " m" : "bez dat");
         appendRecordItem(elements.dynamicsStats, "Nejsilnější výjezd", strongestExit ? "Z" + strongestExit.index + " · +" + strongestExit.gain.toFixed(1).replace(".", ",") + " km/h" : "—", "z minima na výjezd");
         appendRecordItem(elements.dynamicsStats, "Nejslabší výjezd", weakestExit ? "Z" + weakestExit.index + " · +" + weakestExit.gain.toFixed(1).replace(".", ",") + " km/h" : "—", "nejmenší nárůst rychlosti");
-        drawTelemetryMap(elements.dynamicsMap, [bestGps.points], session.track, "speed", braking.slice().sort(function (a, b) { return a.fraction - b.fraction; }).slice(0, 5).map(function (item, index) { return { point: item.point, text: "B" + (index + 1) }; }));
+        var dynamicsLabels = braking.zones.map(function (item) { return { point: item.point, text: item.label }; });
+        if (repeatabilityPoint) dynamicsLabels.push({ point: repeatabilityPoint, text: "STOPA" });
+        drawTelemetryMap(elements.dynamicsMap, [bestGps.points], session.track, "speed", dynamicsLabels);
         drawGgDiagram(elements.ggChart, telemetryLaps);
         cornerResults.forEach(function (corner) {
           appendRecordItem(elements.dynamicsCorners, "Z" + corner.index + " · výjezd", corner.exit.toFixed(1).replace(".", ",") + " km/h", "zrychlení od minima +" + corner.gain.toFixed(1).replace(".", ",") + " km/h");
           appendRecordItem(elements.dynamicsCorners, "Z" + corner.index + " · stabilita", corner.line.toFixed(1).replace(".", ",") + " m", "průměrná odchylka stopy · max. boční " + corner.lateral.toFixed(2).replace(".", ",") + " g");
         });
         var advice = [];
-        if (repeatability && repeatability.worst.value > 2.5) advice.push("Největší rozptyl stopy je kolem " + Math.round(repeatability.worst.fraction * 100) + " % kola; právě tento úsek porovnej s nejlepším kolem.");
-        if (brakingSpread > 5) advice.push("Hlavní brzdný bod kolísá přibližně o ±" + brakingSpread.toFixed(1).replace(".", ",") + " m. Cílem další jízdy je ustálit okamžik brzdění.");
+        if (repeatability && repeatability.worst.value > 2.5) advice.push("Největší rozptyl stopy je " + lineLocation + " (bod STOPA na mapě), průměrně " + repeatability.worst.value.toFixed(1).replace(".", ",") + " m proti nejlepšímu kolu.");
+        if (braking.worst && brakingSpread > 2) advice.push("Brzdný bod " + braking.worst.label + " " + brakingLocation + " kolísá o ±" + brakingSpread.toFixed(1).replace(".", ",") + " m; sleduj bod " + braking.worst.label + " na mapě.");
         if (weakestExit) advice.push("Na výjezdu ze Z" + weakestExit.index + " roste rychlost nejpomaleji. Prioritou je dřívější narovnání motokáry a čistší akcelerace.");
         elements.dynamicsAdvice.textContent = advice.length ? "Doporučení: " + advice.join(" ") : "Dynamika je vyrovnaná. Pro další posun porovnej nejslabší výjezd s nejlepším kolem a sleduj, zda se nezvětšuje rozptyl brzdného bodu.";
       }
