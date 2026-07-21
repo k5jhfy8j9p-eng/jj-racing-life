@@ -925,8 +925,7 @@
         </div>
         <label class="form-label">Trénink <select class="form-control" id="kp-data-session"></select></label>
       </div>
-      <div class="kp-data-note">Metodika kontroly: do souhrnných výpočtů vstupují pouze úplná měřená kola do +5 s od správně určeného nejlepšího kola. Telemetrie různých kol je srovnána podle ujeté GPS vzdálenosti, nikoli podle pořadí bodů. Různé konfigurace stejné tratě se vyhodnocují odděleně a bod zpomalování se zobrazí jen tehdy, když jej spolehlivě potvrdí alespoň tři další kola.</div>
-      <section class="kp-data-panel" data-data-panel="overview"><div class="kp-record-grid" id="kp-data-overview"></div><div class="kp-report-verdict" id="kp-data-advice"></div></section>
+      <section class="kp-data-panel" data-data-panel="overview"><div class="kp-data-note">Metodika kontroly: do souhrnných výpočtů vstupují pouze úplná měřená kola do +5 s od správně určeného nejlepšího kola. Telemetrie různých kol je srovnána podle ujeté GPS vzdálenosti, nikoli podle pořadí bodů. Různé konfigurace stejné tratě se vyhodnocují odděleně a bod zpomalování se zobrazí jen tehdy, když jej spolehlivě potvrdí alespoň tři další kola.</div><div class="kp-record-grid" id="kp-data-overview"></div><div class="kp-report-verdict" id="kp-data-advice"></div></section>
       <section class="kp-data-panel" data-data-panel="laps" hidden><div class="kp-data-layout"><div class="kp-data-sidebar" id="kp-data-laps"></div><div class="kp-data-main"><div class="kp-record-grid" id="kp-lap-detail-stats"></div><svg class="kp-telemetry-map" id="kp-lap-map" viewBox="0 0 900 500"></svg><svg class="kp-telemetry-chart" id="kp-lap-chart" viewBox="0 0 900 250"></svg><div class="kp-data-note" id="kp-lap-note"></div></div></div></section>
       <section class="kp-data-panel" data-data-panel="compare" hidden><div class="kp-data-main"><div class="kp-data-toolbar"><label class="form-label">Kolo A <select class="form-control" id="kp-compare-a"></select></label><label class="form-label">Kolo B <select class="form-control" id="kp-compare-b"></select></label></div><div class="kp-record-grid" id="kp-compare-stats"></div><svg class="kp-telemetry-map" id="kp-compare-map" viewBox="0 0 900 500"></svg><svg class="kp-telemetry-chart" id="kp-compare-chart" viewBox="0 0 900 250"></svg></div></section>
       <section class="kp-data-panel" data-data-panel="track" hidden><div class="kp-data-main"><svg class="kp-telemetry-map" id="kp-corner-map" viewBox="0 0 900 500"></svg><div class="kp-corner-grid" id="kp-corner-grid"></div><div class="kp-data-note">Zatáčky jsou automaticky rozpoznané podle místních minim rychlosti v GPS průběhu nejlepšího analyzovatelného kola. Hodnoty ostatních kol jsou do stejného místa promítnuty podle ujeté vzdálenosti.</div></div></section>
@@ -2136,7 +2135,14 @@
       function trackConfigurationKey(session) {
         var base = trackRecordKey(session && session.track);
         var length = sessionTrackLength(session || {});
-        return Number.isFinite(length) ? base + "|L" + Math.round(length / 100) * 100 : base;
+        if (!Number.isFinite(length)) return base;
+        var comparableLengths = (typeof alfanoSessions !== "undefined" && Array.isArray(alfanoSessions) ? alfanoSessions : []).filter(function (candidate) {
+          return candidate !== session && trackRecordKey(candidate && candidate.track) === base;
+        }).map(sessionTrackLength).filter(Number.isFinite);
+        var typicalLength = median(comparableLengths.concat([length]));
+        // Běžný rozptyl GPS nesmí jednu konfiguraci rozdělit jen kvůli hranici zaokrouhlení.
+        if (Number.isFinite(typicalLength) && Math.abs(length - typicalLength) / typicalLength <= .08) return base + "|MAIN";
+        return base + "|L" + Math.round(length / 100) * 100;
       }
 
       function telemetryProgress(gpsLap) {
@@ -2945,15 +2951,14 @@
 
       function rebuildTelemetryAnalytics(sessions) {
         sessions.filter(alfanoSessionIsValid).forEach(normalizeAlfanoSession);
-        sessions.filter(alfanoSessionIsValid).forEach(function (session) {
-          var base = trackRecordKey(session.track), configuration = trackConfigurationKey(session);
-          if (configuration !== base) {
-            delete alfanoTrackRecords[base];
-            delete alfanoSectorProfiles[base];
-          }
+        var activeBases = new Set(sessions.filter(alfanoSessionIsValid).map(function (session) { return trackRecordKey(session.track); }));
+        Object.keys(alfanoTrackRecords).forEach(function (key) {
+          activeBases.forEach(function (base) { if (key === base || key.indexOf(base + "|") === 0) delete alfanoTrackRecords[key]; });
+        });
+        Object.keys(alfanoSectorProfiles).forEach(function (key) {
+          activeBases.forEach(function (base) { if (key === base || key.indexOf(base + "|") === 0) delete alfanoSectorProfiles[key]; });
         });
         applyVirtualSectors(sessions);
-        new Set(sessions.filter(alfanoSessionIsValid).map(trackConfigurationKey)).forEach(function (key) { delete alfanoTrackRecords[key]; });
         updateAlfanoTrackRecords(sessions);
       }
 
