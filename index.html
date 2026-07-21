@@ -1063,6 +1063,9 @@
       var departureSequenceToken = 0;
       var departureSequenceLabel = "";
       var departureSequenceUntil = 0;
+      var departureAlarmPreviousKey = "";
+      var departureAlarmPreviousSeconds = null;
+      var suppressDepartureAlarmOnce = false;
 
       function ensureDepartureAudio() {
         if (!state.sound) return null;
@@ -2915,6 +2918,7 @@
         state.day = day;
         setPressed(elements.friday, day === "friday");
         setPressed(elements.saturday, day === "saturday");
+        suppressDepartureAlarmOnce = true;
         render();
       }
 
@@ -2924,12 +2928,14 @@
         setPressed(elements.demo, !live);
         elements.demoTime.disabled = live;
         elements.demoLabel.style.opacity = live ? ".55" : "1";
+        suppressDepartureAlarmOnce = true;
         render();
       }
 
       function adjustDelay(amount) {
         state.delay = Math.max(-60, Math.min(180, state.delay + amount));
         saveSetting("karting-program-delay", String(state.delay));
+        suppressDepartureAlarmOnce = true;
         render();
       }
 
@@ -3070,7 +3076,11 @@
         elements.teamCount.textContent = formatDuration(untilStart);
 
         var alarmKey = state.day + "|" + nextJunior.start + "|" + nextJunior.type;
-        if (state.sound && untilPrep <= 10 && lastDepartureAlarmKey !== alarmKey && playDepartureAlarm()) lastDepartureAlarmKey = alarmKey;
+        var crossedDepartureTime = departureAlarmPreviousKey === alarmKey && departureAlarmPreviousSeconds > 10 && untilPrep <= 10;
+        if (state.sound && crossedDepartureTime && !suppressDepartureAlarmOnce && lastDepartureAlarmKey !== alarmKey && playDepartureAlarm()) lastDepartureAlarmKey = alarmKey;
+        departureAlarmPreviousKey = alarmKey;
+        departureAlarmPreviousSeconds = untilPrep;
+        suppressDepartureAlarmOnce = false;
 
         if (Date.now() < departureSequenceUntil && departureSequenceLabel) {
           elements.prepAlert.textContent = departureSequenceLabel;
@@ -3146,17 +3156,19 @@
       elements.saturday.addEventListener("click", function () { setDay("saturday"); });
       elements.live.addEventListener("click", function () { setMode(true); });
       elements.demo.addEventListener("click", function () { setMode(false); });
-      elements.demoTime.addEventListener("input", render);
+      elements.demoTime.addEventListener("input", function () { suppressDepartureAlarmOnce = true; render(); });
       elements.minus.addEventListener("click", function () { adjustDelay(-5); });
       elements.plus.addEventListener("click", function () { adjustDelay(5); });
       elements.reset.addEventListener("click", function () {
         state.delay = 0;
         saveSetting("karting-program-delay", "0");
+        suppressDepartureAlarmOnce = true;
         render();
       });
       elements.prepMinutes.addEventListener("change", function () {
         state.prep = Number(elements.prepMinutes.value);
         saveSetting("karting-program-prep", String(state.prep));
+        suppressDepartureAlarmOnce = true;
         render();
       });
       elements.sound.addEventListener("click", function () {
@@ -3166,6 +3178,7 @@
           ensureDepartureAudio();
           window.setTimeout(playDepartureAlarm, 80);
         }
+        suppressDepartureAlarmOnce = true;
         render();
       });
       root.addEventListener("pointerdown", function () { if (state.sound) ensureDepartureAudio(); }, { passive: true });
