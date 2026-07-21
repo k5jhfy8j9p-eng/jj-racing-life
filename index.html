@@ -1998,6 +1998,10 @@
 
       function telemetryBounds(paths, track) {
         var background = trackMapBackground(track);
+        if (background && (trackRecordKey(track).indexOf("STEEL") !== -1 || trackRecordKey(track).indexOf("TŘINEC") !== -1 || trackRecordKey(track).indexOf("TRINEC") !== -1)) {
+          background.minLat = 49.6887052727;
+          background.maxLat = 49.6941947273;
+        }
         if (background) return { minLon: background.minLon, minLat: background.minLat, maxLon: background.maxLon, maxLat: background.maxLat, image: background.src };
         var points = paths.flat();
         var lats = points.map(function (point) { return point[0]; });
@@ -2563,6 +2567,10 @@
           alignPath(profile.bestSectorPaths[2], [{ point: profile.gates[1], atEnd: false }])
         ];
         var background = trackMapBackground(profile.track);
+        if (background && (trackRecordKey(profile.track).indexOf("STEEL") !== -1 || trackRecordKey(profile.track).indexOf("TŘINEC") !== -1 || trackRecordKey(profile.track).indexOf("TRINEC") !== -1)) {
+          background.minLat = 49.6887052727;
+          background.maxLat = 49.6941947273;
+        }
         var allPoints = [profile.bestLapPath].concat(idealPaths).flat();
         var width = 1100, height = 888, padding = background ? 0 : 28;
         elements.idealMap.setAttribute("viewBox", "0 0 " + width + " " + height);
