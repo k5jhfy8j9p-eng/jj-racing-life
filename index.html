@@ -109,6 +109,10 @@
     #karting-program-app .kp-pdf-status span { margin-top: 4px; color: var(--muted-foreground); }
     #karting-program-app .kp-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
     #karting-program-app .kp-dialog-actions a { text-decoration: none; }
+    #karting-program-app .kp-manual-form { display: grid; gap: 12px; }
+    #karting-program-app .kp-manual-form textarea { width: 100%; min-height: 190px; resize: vertical; line-height: 1.55; }
+    #karting-program-app .kp-manual-help { margin: 0; color: var(--muted-foreground); font-size: .92rem; }
+    #karting-program-app .kp-manual-message { min-height: 1.4em; color: #ffd5d7; }
 
     @media (max-width: 900px), (max-height: 620px) {
       body { overflow: auto; }
@@ -667,6 +671,7 @@
           <span class="viz-badge" id="kp-data-badge">Rozpis: výchozí</span>
           <span class="viz-badge" id="kp-status-badge">Podle plánu</span>
           <button type="button" class="btn" id="kp-manage-pdf">Nový víkend</button>
+          <button type="button" class="btn" id="kp-manage-manual">Ruční program dne</button>
           <button type="button" class="btn" id="kp-fullscreen">Celá obrazovka</button>
         </div>
         <div class="kp-pdf-confirmation" id="kp-pdf-confirmation">Rozpis PDF ještě nebyl ověřen.</div>
@@ -811,6 +816,29 @@
       <div class="kp-dialog-actions">
         <a class="btn" href="https://github.com/k5jhfy8j9p-eng/jj-racing-life/upload/main" target="_blank" rel="noopener">Otevřít nahrávání PDF</a>
         <button type="button" class="btn btn-primary" id="kp-reload-pdf">Ověřit a načíst PDF</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-manual-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div>
+          <h2>Ruční program dne</h2>
+          <p class="kp-dialog-copy">Každou jízdu napiš na nový řádek. Program se uloží v tomto zařízení pouze pro dnešní datum.</p>
+        </div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div class="kp-manual-form">
+        <label class="form-label" for="kp-manual-input">Čas a název jízdy</label>
+        <textarea class="form-control" id="kp-manual-input" spellcheck="false" placeholder="09:30–09:45 Volný trénink&#10;11:10–11:25 Kvalifikace&#10;14:20–14:35 Závod"></textarea>
+        <p class="kp-manual-help">Formát: <strong>HH:MM–HH:MM Název</strong>. Použít můžeš pomlčku -, – nebo —. Jízdy musí být ve stejném dni a nesmí se překrývat.</p>
+        <div class="kp-manual-message" id="kp-manual-message" role="status"></div>
+      </div>
+      <div class="kp-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="kp-manual-clear">Vymazat ruční program</button>
+        <button type="button" class="btn" id="kp-use-pdf">Použít PDF rozpis</button>
+        <button type="button" class="btn btn-primary" id="kp-manual-save">Uložit a použít</button>
       </div>
     </div>
   </dialog>
@@ -1050,6 +1078,8 @@
       var storedDelayValue = loadSetting("karting-program-delay");
       var storedPrepValue = loadSetting("karting-program-prep");
       var storedSoundValue = loadSetting("karting-program-sound");
+      var manualSchedule = [];
+      var manualScheduleDate = "";
       var storedDelay = storedDelayValue === null ? 0 : Number(storedDelayValue);
       var storedPrep = storedPrepValue === null ? 15 : Number(storedPrepValue);
       var state = {
@@ -1057,7 +1087,8 @@
         live: false,
         delay: Number.isFinite(storedDelay) ? storedDelay : 0,
         prep: Number.isFinite(storedPrep) ? storedPrep : 15,
-        sound: storedSoundValue === "1"
+        sound: storedSoundValue === "1",
+        manual: false
       };
 
       var departureAudioContext = null;
@@ -1153,6 +1184,13 @@
         demoLabel: root.querySelector("#kp-demo-label"),
         fullscreen: root.querySelector("#kp-fullscreen"),
         managePdf: root.querySelector("#kp-manage-pdf"),
+        manageManual: root.querySelector("#kp-manage-manual"),
+        manualDialog: root.querySelector("#kp-manual-dialog"),
+        manualInput: root.querySelector("#kp-manual-input"),
+        manualMessage: root.querySelector("#kp-manual-message"),
+        manualSave: root.querySelector("#kp-manual-save"),
+        manualClear: root.querySelector("#kp-manual-clear"),
+        usePdf: root.querySelector("#kp-use-pdf"),
         pdfDialog: root.querySelector("#kp-pdf-dialog"),
         reloadPdf: root.querySelector("#kp-reload-pdf"),
         pdfFriday: root.querySelector("#kp-pdf-friday"),
@@ -1313,6 +1351,93 @@
           return event && Number.isFinite(event.start) && Boolean(event.title) &&
             (event.end === null || event.end === undefined || (Number.isFinite(event.end) && event.end > event.start));
         });
+      }
+
+      function localDateKey(date) {
+        var value = date || new Date();
+        return value.getFullYear() + "-" + pad(value.getMonth() + 1) + "-" + pad(value.getDate());
+      }
+
+      function manualScheduleIsValid(sessions) {
+        return Array.isArray(sessions) && sessions.length >= 1 && sessions.every(function (session, index) {
+          var previous = sessions[index - 1];
+          return Number.isFinite(session.start) && Number.isFinite(session.end) && session.end > session.start &&
+            Boolean(session.type) && (!previous || previous.end <= session.start);
+        });
+      }
+
+      function parseManualSchedule(text) {
+        var lines = String(text || "").split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
+        if (!lines.length) throw new Error("Napiš alespoň jednu jízdu.");
+        var parsed = lines.map(function (line, index) {
+          var match = line.match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})\s+(.+)$/);
+          if (!match) throw new Error("Řádek " + (index + 1) + " nemá formát HH:MM–HH:MM Název.");
+          var startHour = Number(match[1]);
+          var startMinute = Number(match[2]);
+          var endHour = Number(match[3]);
+          var endMinute = Number(match[4]);
+          if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59) {
+            throw new Error("Řádek " + (index + 1) + " obsahuje neplatný čas.");
+          }
+          var start = startHour * 60 + startMinute;
+          var end = endHour * 60 + endMinute;
+          if (end <= start) throw new Error("Řádek " + (index + 1) + ": konec musí být později než začátek.");
+          return { start: start, end: end, category: "Junior", type: match[5].trim(), detail: "Ruční program" };
+        }).sort(function (a, b) { return a.start - b.start; });
+        if (!manualScheduleIsValid(parsed)) throw new Error("Časy jízd se nesmí překrývat.");
+        return parsed;
+      }
+
+      function serializeManualSchedule(sessions) {
+        return sessions.map(function (session) {
+          return formatClock(session.start, false) + "–" + formatClock(session.end, false) + " " + session.type;
+        }).join("\n");
+      }
+
+      function restoreManualSchedule() {
+        var saved = loadSetting("karting-manual-schedule");
+        if (!saved) return;
+        try {
+          var parsed = JSON.parse(saved);
+          if (parsed.date !== localDateKey() || !manualScheduleIsValid(parsed.sessions)) return;
+          manualSchedule = parsed.sessions;
+          manualScheduleDate = parsed.date;
+          state.manual = parsed.active !== false;
+          elements.manualInput.value = serializeManualSchedule(manualSchedule);
+        } catch (error) { /* Neplatný ruční program ignorujeme. */ }
+      }
+
+      function saveManualSchedule() {
+        var parsed = parseManualSchedule(elements.manualInput.value);
+        manualSchedule = parsed;
+        manualScheduleDate = localDateKey();
+        state.manual = true;
+        saveSetting("karting-manual-schedule", JSON.stringify({
+          date: manualScheduleDate,
+          active: true,
+          sessions: manualSchedule
+        }));
+        elements.manualMessage.textContent = "✓ Ruční program je aktivní.";
+        suppressDepartureAlarmOnce = true;
+        setMode(true);
+        render();
+        window.setTimeout(function () { elements.manualDialog.close(); }, 350);
+      }
+
+      function usePdfSchedule() {
+        state.manual = false;
+        var saved = loadSetting("karting-manual-schedule");
+        if (saved) {
+          try {
+            var parsed = JSON.parse(saved);
+            parsed.active = false;
+            saveSetting("karting-manual-schedule", JSON.stringify(parsed));
+          } catch (error) { /* Nic dalšího není potřeba. */ }
+        }
+        renderPdfStatus(false);
+        suppressDepartureAlarmOnce = true;
+        render();
+        if (elements.manualDialog.open) elements.manualDialog.close();
       }
 
       function restoreCachedSchedules() {
@@ -3500,7 +3625,8 @@
 
       function render() {
         var now = nowMinutes();
-        var sessions = schedules[state.day].map(effective);
+        var sourceSessions = state.manual && manualScheduleDate === localDateKey() ? manualSchedule : schedules[state.day];
+        var sessions = sourceSessions.map(effective);
         var situation = getSituation(now, sessions);
         var current = situation.current;
         var next = situation.next;
@@ -3555,12 +3681,20 @@
 
         renderTeam(sessions, now, situation);
         renderUpcoming(sessions, now, situation);
-        renderSupportEvents(now);
-        elements.footer.textContent = state.live ? "Živý čas telefonu · změna zpoždění se uloží v tomto zařízení." : "Zkušební režim · změň čas a ověř si chování aplikace.";
+        if (state.manual) {
+          elements.supportList.innerHTML = '<div class="kp-support-empty">Ruční program obsahuje pouze tvoje jízdy.</div>';
+          elements.dataBadge.textContent = "Ruční program ✓";
+          elements.pdfConfirmation.className = "kp-pdf-confirmation is-success";
+          elements.pdfConfirmation.textContent = "✓ AKTIVNÍ RUČNÍ PROGRAM DNE · " + manualSchedule.length + " jízd · uloženo v tomto zařízení";
+        } else {
+          renderSupportEvents(now);
+        }
+        elements.footer.textContent = state.manual ? "Ruční program dne · časy a upozornění jsou uložené v tomto zařízení." :
+          (state.live ? "Živý čas telefonu · změna zpoždění se uloží v tomto zařízení." : "Zkušební režim · změň čas a ověř si chování aplikace.");
       }
 
-      elements.friday.addEventListener("click", function () { setDay("friday"); });
-      elements.saturday.addEventListener("click", function () { setDay("saturday"); });
+      elements.friday.addEventListener("click", function () { if (state.manual) usePdfSchedule(); setDay("friday"); });
+      elements.saturday.addEventListener("click", function () { if (state.manual) usePdfSchedule(); setDay("saturday"); });
       elements.live.addEventListener("click", function () { setMode(true); });
       elements.demo.addEventListener("click", function () { setMode(false); });
       elements.demoTime.addEventListener("input", function () { suppressDepartureAlarmOnce = true; render(); });
@@ -3589,6 +3723,28 @@
         render();
       });
       root.addEventListener("pointerdown", function () { if (state.sound) ensureDepartureAudio(); }, { passive: true });
+
+      elements.manageManual.addEventListener("click", function () {
+        elements.manualMessage.textContent = "";
+        if (manualSchedule.length && !elements.manualInput.value.trim()) elements.manualInput.value = serializeManualSchedule(manualSchedule);
+        if (typeof elements.manualDialog.showModal === "function") elements.manualDialog.showModal();
+      });
+      elements.manualSave.addEventListener("click", function () {
+        try { saveManualSchedule(); }
+        catch (error) { elements.manualMessage.textContent = error.message || "Program se nepodařilo uložit."; }
+      });
+      elements.usePdf.addEventListener("click", usePdfSchedule);
+      elements.manualClear.addEventListener("click", function () {
+        if (!window.confirm("Opravdu vymazat dnešní ruční program?")) return;
+        manualSchedule = [];
+        manualScheduleDate = "";
+        state.manual = false;
+        elements.manualInput.value = "";
+        elements.manualMessage.textContent = "Ruční program byl vymazán.";
+        try { localStorage.removeItem("karting-manual-schedule"); } catch (error) {}
+        renderPdfStatus(false);
+        render();
+      });
 
       elements.managePdf.addEventListener("click", function () {
         if (typeof elements.pdfDialog.showModal === "function") elements.pdfDialog.showModal();
@@ -3665,6 +3821,7 @@
         state.live = true;
       }
       restoreCachedSchedules();
+      restoreManualSchedule();
       restoreAlfanoSessions();
       restoreAlfanoTrackRecords();
       restoreAlfanoSectorProfiles();
