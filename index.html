@@ -110,9 +110,25 @@
     #karting-program-app .kp-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
     #karting-program-app .kp-dialog-actions a { text-decoration: none; }
     #karting-program-app .kp-manual-form { display: grid; gap: 12px; }
-    #karting-program-app .kp-manual-form textarea { width: 100%; min-height: 190px; resize: vertical; line-height: 1.55; }
+    #karting-program-app .kp-manual-columns,
+    #karting-program-app .kp-manual-row { display: grid; grid-template-columns: 105px 105px minmax(180px, 1fr) 92px 42px; gap: 8px; align-items: center; }
+    #karting-program-app .kp-manual-columns { padding: 0 4px; color: var(--muted-foreground); font-size: .82rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    #karting-program-app .kp-manual-rows { display: grid; gap: 8px; max-height: min(48vh, 460px); overflow: auto; padding-right: 3px; }
+    #karting-program-app .kp-manual-row .form-control { width: 100%; min-width: 0; }
+    #karting-program-app .kp-manual-team { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--secondary); color: var(--secondary-foreground); font-weight: 750; cursor: pointer; }
+    #karting-program-app .kp-manual-team input { width: 18px; height: 18px; accent-color: var(--primary); }
+    #karting-program-app .kp-manual-remove { min-width: 38px; padding-inline: 8px; color: #ffd5d7; }
     #karting-program-app .kp-manual-help { margin: 0; color: var(--muted-foreground); font-size: .92rem; }
     #karting-program-app .kp-manual-message { min-height: 1.4em; color: #ffd5d7; }
+    @media (max-width: 620px) {
+      #karting-program-app .kp-manual-columns { display: none; }
+      #karting-program-app .kp-manual-row { grid-template-columns: 1fr 1fr 76px 42px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.025); }
+      #karting-program-app .kp-manual-row .kp-manual-title { grid-column: 1 / -1; grid-row: 1; }
+      #karting-program-app .kp-manual-row .kp-manual-start { grid-column: 1; grid-row: 2; }
+      #karting-program-app .kp-manual-row .kp-manual-end { grid-column: 2; grid-row: 2; }
+      #karting-program-app .kp-manual-row .kp-manual-team { grid-column: 3; grid-row: 2; }
+      #karting-program-app .kp-manual-row .kp-manual-remove { grid-column: 4; grid-row: 2; }
+    }
 
     @media (max-width: 900px), (max-height: 620px) {
       body { overflow: auto; }
@@ -825,14 +841,15 @@
       <div class="kp-dialog-head">
         <div>
           <h2>Ruční program dne</h2>
-          <p class="kp-dialog-copy">Každou jízdu napiš na nový řádek. Program se uloží v tomto zařízení pouze pro dnešní datum.</p>
+          <p class="kp-dialog-copy">Zadej celý program tratě a zaškrtni JJ pouze u našich jízd. Program se uloží v tomto zařízení pro dnešní datum.</p>
         </div>
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
       <div class="kp-manual-form">
-        <label class="form-label" for="kp-manual-input">Čas a název jízdy</label>
-        <textarea class="form-control" id="kp-manual-input" spellcheck="false" placeholder="09:30–09:45 Volný trénink&#10;11:10–11:25 Kvalifikace&#10;14:20–14:35 Závod"></textarea>
-        <p class="kp-manual-help">Formát: <strong>HH:MM–HH:MM Název</strong>. Použít můžeš pomlčku -, – nebo —. Jízdy musí být ve stejném dni a nesmí se překrývat.</p>
+        <div class="kp-manual-columns" aria-hidden="true"><span>Od</span><span>Do</span><span>Co se děje na trati</span><span>Naše jízda</span><span></span></div>
+        <div class="kp-manual-rows" id="kp-manual-rows"></div>
+        <div><button type="button" class="btn" id="kp-manual-add">＋ Přidat položku</button></div>
+        <p class="kp-manual-help">Zaškrtni <strong>JJ</strong> jen u našich tréninků. Levý panel sleduje celý program tratě, pravý panel odpočítává k nejbližší jízdě JJ.</p>
         <div class="kp-manual-message" id="kp-manual-message" role="status"></div>
       </div>
       <div class="kp-dialog-actions">
@@ -1186,7 +1203,8 @@
         managePdf: root.querySelector("#kp-manage-pdf"),
         manageManual: root.querySelector("#kp-manage-manual"),
         manualDialog: root.querySelector("#kp-manual-dialog"),
-        manualInput: root.querySelector("#kp-manual-input"),
+        manualRows: root.querySelector("#kp-manual-rows"),
+        manualAdd: root.querySelector("#kp-manual-add"),
         manualMessage: root.querySelector("#kp-manual-message"),
         manualSave: root.querySelector("#kp-manual-save"),
         manualClear: root.querySelector("#kp-manual-clear"),
@@ -1362,36 +1380,98 @@
         return Array.isArray(sessions) && sessions.length >= 1 && sessions.every(function (session, index) {
           var previous = sessions[index - 1];
           return Number.isFinite(session.start) && Number.isFinite(session.end) && session.end > session.start &&
-            Boolean(session.type) && (!previous || previous.end <= session.start);
+            Boolean(session.category) && typeof session.isTeam === "boolean" && (!previous || previous.end <= session.start);
         });
       }
 
-      function parseManualSchedule(text) {
-        var lines = String(text || "").split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
-        if (!lines.length) throw new Error("Napiš alespoň jednu jízdu.");
-        var parsed = lines.map(function (line, index) {
-          var match = line.match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})\s+(.+)$/);
-          if (!match) throw new Error("Řádek " + (index + 1) + " nemá formát HH:MM–HH:MM Název.");
-          var startHour = Number(match[1]);
-          var startMinute = Number(match[2]);
-          var endHour = Number(match[3]);
-          var endMinute = Number(match[4]);
-          if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59) {
-            throw new Error("Řádek " + (index + 1) + " obsahuje neplatný čas.");
-          }
-          var start = startHour * 60 + startMinute;
-          var end = endHour * 60 + endMinute;
-          if (end <= start) throw new Error("Řádek " + (index + 1) + ": konec musí být později než začátek.");
-          return { start: start, end: end, category: "Junior", type: match[5].trim(), detail: "Ruční program" };
-        }).sort(function (a, b) { return a.start - b.start; });
-        if (!manualScheduleIsValid(parsed)) throw new Error("Časy jízd se nesmí překrývat.");
-        return parsed;
+      function manualTimeValue(value) {
+        return pad(Math.floor(value / 60)) + ":" + pad(Math.round(value % 60));
       }
 
-      function serializeManualSchedule(sessions) {
-        return sessions.map(function (session) {
-          return formatClock(session.start, false) + "–" + formatClock(session.end, false) + " " + session.type;
-        }).join("\n");
+      function manualMinutes(value) {
+        var match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+        if (!match) return null;
+        var hour = Number(match[1]);
+        var minute = Number(match[2]);
+        return hour <= 23 && minute <= 59 ? hour * 60 + minute : null;
+      }
+
+      function normalizedManualSessions(sessions) {
+        return (sessions || []).map(function (session) {
+          if (typeof session.isTeam === "boolean") return session;
+          var title = session.type && session.type !== "Naše jízda JJ" ? session.type : (session.category || "Trénink JJ");
+          return { start: session.start, end: session.end, category: title, type: "Naše jízda JJ", detail: "Ruční program", isTeam: true };
+        }).sort(function (a, b) { return a.start - b.start; });
+      }
+
+      function createManualRow(session) {
+        var row = document.createElement("div");
+        row.className = "kp-manual-row";
+        row.innerHTML =
+          '<input class="form-control kp-manual-start" type="time" aria-label="Začátek">' +
+          '<input class="form-control kp-manual-end" type="time" aria-label="Konec">' +
+          '<input class="form-control kp-manual-title" type="text" aria-label="Co se děje na trati" placeholder="Např. Junior · trénink 2">' +
+          '<label class="kp-manual-team"><input type="checkbox" aria-label="Naše jízda JJ"><span>JJ</span></label>' +
+          '<button type="button" class="btn btn-ghost kp-manual-remove" aria-label="Odstranit položku">×</button>';
+        if (session) {
+          row.querySelector(".kp-manual-start").value = manualTimeValue(session.start);
+          row.querySelector(".kp-manual-end").value = manualTimeValue(session.end);
+          row.querySelector(".kp-manual-title").value = session.category || "";
+          row.querySelector(".kp-manual-team input").checked = Boolean(session.isTeam);
+        }
+        elements.manualRows.appendChild(row);
+        return row;
+      }
+
+      function renderManualRows(sessions) {
+        elements.manualRows.innerHTML = "";
+        var entries = sessions && sessions.length ? normalizedManualSessions(sessions) : [];
+        if (entries.length) entries.forEach(createManualRow);
+        else createManualRow(null);
+      }
+
+      function addManualRow() {
+        var rows = elements.manualRows.querySelectorAll(".kp-manual-row");
+        var previous = rows.length ? rows[rows.length - 1] : null;
+        var start = previous ? manualMinutes(previous.querySelector(".kp-manual-end").value) : null;
+        var row = createManualRow(Number.isFinite(start) ? {
+          start: start, end: Math.min(start + 15, 1439), category: "", isTeam: false
+        } : null);
+        row.querySelector(".kp-manual-title").focus();
+        elements.manualRows.scrollTop = elements.manualRows.scrollHeight;
+      }
+
+      function readManualSchedule() {
+        var rows = Array.from(elements.manualRows.querySelectorAll(".kp-manual-row"));
+        var parsed = [];
+        rows.forEach(function (row, index) {
+          var startValue = row.querySelector(".kp-manual-start").value;
+          var endValue = row.querySelector(".kp-manual-end").value;
+          var title = row.querySelector(".kp-manual-title").value.trim();
+          var isTeam = row.querySelector(".kp-manual-team input").checked;
+          if (!startValue && !endValue && !title) return;
+          if (!startValue || !endValue || !title) throw new Error("Doplň všechny údaje na řádku " + (index + 1) + ".");
+          var start = manualMinutes(startValue);
+          var end = manualMinutes(endValue);
+          if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+            throw new Error("Na řádku " + (index + 1) + " musí být konec později než začátek.");
+          }
+          parsed.push({
+            start: start,
+            end: end,
+            category: title,
+            type: isTeam ? "Naše jízda JJ" : "Program tratě",
+            detail: "Ruční program",
+            isTeam: isTeam
+          });
+        });
+        parsed.sort(function (a, b) { return a.start - b.start; });
+        if (!parsed.length) throw new Error("Přidej alespoň jednu položku programu.");
+        if (!manualScheduleIsValid(parsed)) throw new Error("Časy programu se nesmí překrývat.");
+        if (!parsed.some(function (session) { return session.isTeam; })) {
+          throw new Error("Označ alespoň jednu naši jízdu zaškrtnutím JJ.");
+        }
+        return parsed;
       }
 
       function restoreManualSchedule() {
@@ -1399,16 +1479,17 @@
         if (!saved) return;
         try {
           var parsed = JSON.parse(saved);
-          if (parsed.date !== localDateKey() || !manualScheduleIsValid(parsed.sessions)) return;
-          manualSchedule = parsed.sessions;
+          if (parsed.date !== localDateKey()) return;
+          var sessions = normalizedManualSessions(parsed.sessions);
+          if (!manualScheduleIsValid(sessions)) return;
+          manualSchedule = sessions;
           manualScheduleDate = parsed.date;
           state.manual = parsed.active !== false;
-          elements.manualInput.value = serializeManualSchedule(manualSchedule);
         } catch (error) { /* Neplatný ruční program ignorujeme. */ }
       }
 
       function saveManualSchedule() {
-        var parsed = parseManualSchedule(elements.manualInput.value);
+        var parsed = readManualSchedule();
         manualSchedule = parsed;
         manualScheduleDate = localDateKey();
         state.manual = true;
@@ -1417,7 +1498,8 @@
           active: true,
           sessions: manualSchedule
         }));
-        elements.manualMessage.textContent = "✓ Ruční program je aktivní.";
+        elements.manualMessage.textContent = "✓ Program tratě je aktivní · " +
+          manualSchedule.filter(function (session) { return session.isTeam; }).length + " jízd JJ.";
         suppressDepartureAlarmOnce = true;
         setMode(true);
         render();
@@ -3427,7 +3509,8 @@
           end: session.end + state.delay,
           category: session.category,
           type: session.type,
-          detail: session.detail
+          detail: session.detail,
+          isTeam: Boolean(session.isTeam)
         };
       }
 
@@ -3484,6 +3567,10 @@
         };
       }
 
+      function isTeamSession(session) {
+        return state.manual ? Boolean(session && session.isTeam) : isJuniorCategory(session && session.category);
+      }
+
       function renderUpcoming(sessions, now, situation) {
         var startIndex = situation.currentIndex >= 0 ? situation.currentIndex + 1 : situation.nextIndex;
         var upcoming = startIndex >= 0 ? sessions.slice(startIndex, startIndex + 5) : [];
@@ -3499,7 +3586,7 @@
 
         upcoming.forEach(function (session) {
           var row = document.createElement("div");
-          row.className = "kp-session-row" + (isJuniorCategory(session.category) ? " is-junior" : "");
+          row.className = "kp-session-row" + (isTeamSession(session) ? " is-junior" : "");
           row.setAttribute("aria-label", formatClock(session.start, false) + ", " + session.category + ", " + session.type);
 
           var time = document.createElement("span");
@@ -3576,15 +3663,15 @@
       }
 
       function renderTeam(sessions, now, situation) {
-        var currentJunior = situation.current && isJuniorCategory(situation.current.category) ? situation.current : null;
+        var currentJunior = situation.current && isTeamSession(situation.current) ? situation.current : null;
         var nextJunior = sessions.find(function (session) {
-          return isJuniorCategory(session.category) && session.start > now;
+          return isTeamSession(session) && session.start > now;
         });
 
         if (currentJunior) {
           var remaining = (currentJunior.end - now) * 60;
           elements.teamTime.textContent = formatClock(currentJunior.start, false);
-          elements.teamTitle.textContent = currentJunior.type;
+          elements.teamTitle.textContent = state.manual ? currentJunior.category : currentJunior.type;
           elements.teamLabel.textContent = "JJ právě jede · do konce";
           elements.teamCount.textContent = formatDuration(remaining);
           elements.prepAlert.textContent = "JJ JE NA TRATI";
@@ -3603,7 +3690,7 @@
         var untilStart = (nextJunior.start - now) * 60;
         var untilPrep = untilStart - state.prep * 60;
         elements.teamTime.textContent = formatClock(nextJunior.start, false);
-        elements.teamTitle.textContent = nextJunior.type + (nextJunior.detail ? " · " + nextJunior.detail : "");
+        elements.teamTitle.textContent = state.manual ? nextJunior.category : nextJunior.type + (nextJunior.detail ? " · " + nextJunior.detail : "");
         elements.teamLabel.textContent = "Do další jízdy JJ";
         elements.teamCount.textContent = formatDuration(untilStart);
 
@@ -3685,7 +3772,8 @@
           elements.supportList.innerHTML = '<div class="kp-support-empty">Ruční program obsahuje pouze tvoje jízdy.</div>';
           elements.dataBadge.textContent = "Ruční program ✓";
           elements.pdfConfirmation.className = "kp-pdf-confirmation is-success";
-          elements.pdfConfirmation.textContent = "✓ AKTIVNÍ RUČNÍ PROGRAM DNE · " + manualSchedule.length + " jízd · uloženo v tomto zařízení";
+          elements.pdfConfirmation.textContent = "✓ AKTIVNÍ RUČNÍ PROGRAM DNE · " + manualSchedule.length + " položek · JJ " +
+            manualSchedule.filter(function (session) { return session.isTeam; }).length + "× · uloženo v tomto zařízení";
         } else {
           renderSupportEvents(now);
         }
@@ -3726,8 +3814,15 @@
 
       elements.manageManual.addEventListener("click", function () {
         elements.manualMessage.textContent = "";
-        if (manualSchedule.length && !elements.manualInput.value.trim()) elements.manualInput.value = serializeManualSchedule(manualSchedule);
+        renderManualRows(manualSchedule);
         if (typeof elements.manualDialog.showModal === "function") elements.manualDialog.showModal();
+      });
+      elements.manualAdd.addEventListener("click", addManualRow);
+      elements.manualRows.addEventListener("click", function (event) {
+        var button = event.target.closest(".kp-manual-remove");
+        if (!button) return;
+        button.closest(".kp-manual-row").remove();
+        if (!elements.manualRows.children.length) createManualRow(null);
       });
       elements.manualSave.addEventListener("click", function () {
         try { saveManualSchedule(); }
@@ -3739,7 +3834,7 @@
         manualSchedule = [];
         manualScheduleDate = "";
         state.manual = false;
-        elements.manualInput.value = "";
+        renderManualRows([]);
         elements.manualMessage.textContent = "Ruční program byl vymazán.";
         try { localStorage.removeItem("karting-manual-schedule"); } catch (error) {}
         renderPdfStatus(false);
