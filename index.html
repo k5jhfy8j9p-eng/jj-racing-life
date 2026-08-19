@@ -2339,7 +2339,7 @@
         return median(lengths);
       }
 
-      var trackShapeVersion = 2;
+      var trackShapeVersion = 3;
 
       function representativeGpsLap(session) {
         var candidates = (session && Array.isArray(session.gpsLaps) ? session.gpsLaps : []).filter(function (lap) {
@@ -2375,19 +2375,34 @@
         if (!first || !second || !first.samples || first.samples.length !== second.samples.length) return null;
         var count = first.samples.length;
         var best = null;
-        // Alfano může začátek kola zachytit o několik GPS vzorků vedle. Zkusíme malý kruhový posun,
-        // ale zbytek trasy porovnáváme bod proti odpovídající ujeté vzdálenosti.
+        var latitude = first.samples.concat(second.samples).reduce(function (sum, point) { return sum + point[0]; }, 0) / (count * 2);
+        var scaleX = 111320 * Math.cos(latitude * Math.PI / 180);
+        // Nejdřív odstraníme společný posun celé GPS stopy mezi dvěma návštěvami tratě.
+        // Teprve zbytková změna tvaru může znamenat jinou konfiguraci okruhu.
         for (var shift = -2; shift <= 2; shift += 1) {
-          var distances = first.samples.map(function (point, index) {
+          var vectors = first.samples.map(function (point, index) {
             var other = second.samples[(index + shift + count) % count];
-            return gpsDistance(point, other);
+            return { x: (other[1] - point[1]) * scaleX, y: (other[0] - point[0]) * 111320 };
+          });
+          var offset = vectors.reduce(function (sum, vector) {
+            sum.x += vector.x;
+            sum.y += vector.y;
+            return sum;
+          }, { x: 0, y: 0 });
+          offset.x /= vectors.length;
+          offset.y /= vectors.length;
+          var distances = vectors.map(function (vector) {
+            var dx = vector.x - offset.x;
+            var dy = vector.y - offset.y;
+            return Math.sqrt(dx * dx + dy * dy);
           });
           var mean = distances.reduce(function (sum, value) { return sum + value; }, 0) / distances.length;
           var candidate = {
             mean: mean,
             p90: percentile(distances, .90),
             p95: percentile(distances, .95),
-            maximum: Math.max.apply(null, distances)
+            maximum: Math.max.apply(null, distances),
+            alignment: Math.sqrt(offset.x * offset.x + offset.y * offset.y)
           };
           candidate.score = candidate.mean + candidate.p90 + candidate.p95;
           if (!best || candidate.score < best.score) best = candidate;
@@ -2400,7 +2415,7 @@
         var difference = trackRouteDifference(first, second);
         if (!difference) return false;
         // Limity jsou výrazně nad běžnou odchylkou závodní stopy/GPS, ale pod změnou vedení tratě.
-        return difference.lengthRatio <= .08 && difference.mean <= 3.5 && difference.p90 <= 5.0 && difference.p95 <= 5.5;
+        return difference.lengthRatio <= .08 && difference.mean <= 3.0 && difference.p90 <= 4.0 && difference.p95 <= 4.5;
       }
 
       function assignTrackConfigurations(sessions) {
