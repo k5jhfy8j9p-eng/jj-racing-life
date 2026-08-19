@@ -2339,7 +2339,7 @@
         return median(lengths);
       }
 
-      var trackShapeVersion = 3;
+      var trackShapeVersion = 4;
 
       function representativeGpsLap(session) {
         var candidates = (session && Array.isArray(session.gpsLaps) ? session.gpsLaps : []).filter(function (lap) {
@@ -2418,6 +2418,42 @@
         return difference.lengthRatio <= .08 && difference.mean <= 3.0 && difference.p90 <= 4.0 && difference.p95 <= 4.5;
       }
 
+      function representativeVisitRoute(routes) {
+        if (!routes.length) return null;
+        if (routes.length === 1) return routes[0];
+        return routes.slice().sort(function (first, second) {
+          function score(route) {
+            return routes.reduce(function (sum, candidate) {
+              if (route === candidate) return sum;
+              var difference = trackRouteDifference(route, candidate);
+              return sum + (difference ? difference.p95 : 1000);
+            }, 0);
+          }
+          return score(first) - score(second);
+        })[0];
+      }
+
+      function trackVisits(sessions) {
+        var visitGap = 4 * 24 * 60 * 60 * 1000;
+        var visits = [];
+        sessions.forEach(function (session) {
+          var previousVisit = visits[visits.length - 1];
+          var previousSession = previousVisit && previousVisit.sessions[previousVisit.sessions.length - 1];
+          var timestamp = session.timestamp || 0;
+          var previousTimestamp = previousSession && previousSession.timestamp || 0;
+          var sameVisit = previousVisit && timestamp && previousTimestamp && timestamp - previousTimestamp <= visitGap;
+          if (!sameVisit) {
+            previousVisit = { sessions: [], routes: [], route: null };
+            visits.push(previousVisit);
+          }
+          previousVisit.sessions.push(session);
+          var route = sampledTrackRoute(session, 64);
+          if (route) previousVisit.routes.push(route);
+        });
+        visits.forEach(function (visit) { visit.route = representativeVisitRoute(visit.routes); });
+        return visits;
+      }
+
       function assignTrackConfigurations(sessions) {
         var valid = (sessions || []).filter(alfanoSessionIsValid);
         var byBase = {};
@@ -2433,30 +2469,34 @@
           var ordered = byBase[base].slice().sort(function (a, b) {
             return (a.timestamp || 0) - (b.timestamp || 0) || String(a.fileName || "").localeCompare(String(b.fileName || ""));
           });
+          var visits = trackVisits(ordered);
           var clusters = [];
           var withoutRoute = [];
-          ordered.forEach(function (session) {
-            var route = sampledTrackRoute(session, 64);
-            if (!route) {
-              withoutRoute.push(session);
+
+          visits.forEach(function (visit) {
+            if (!visit.route) {
+              withoutRoute.push(visit);
               return;
             }
             var cluster = clusters.find(function (candidate) {
-              return candidate.routes.length && sameTrackRoute(route, candidate.routes[0]);
+              return candidate.reference && sameTrackRoute(visit.route, candidate.reference);
             });
             if (!cluster) {
-              cluster = { routes: [], sessions: [] };
+              cluster = { reference: visit.route, visits: [] };
               clusters.push(cluster);
             }
-            cluster.routes.push(route);
-            cluster.sessions.push(session);
+            cluster.visits.push(visit);
           });
 
           clusters.forEach(function (cluster, index) {
-            cluster.sessions.forEach(function (session) { session._trackConfigurationKey = base + "|GPS" + (index + 1); });
+            cluster.visits.forEach(function (visit) {
+              visit.sessions.forEach(function (session) { session._trackConfigurationKey = base + "|GPS" + (index + 1); });
+            });
           });
-          withoutRoute.forEach(function (session) {
-            session._trackConfigurationKey = clusters.length === 1 ? base + "|GPS1" : base + "|UNKNOWN";
+          withoutRoute.forEach(function (visit) {
+            visit.sessions.forEach(function (session) {
+              session._trackConfigurationKey = clusters.length === 1 ? base + "|GPS1" : base + "|UNKNOWN";
+            });
           });
         });
       }
@@ -2545,9 +2585,18 @@
         var totalLaps = sorted.reduce(function (sum, session) { return sum + session.laps.length; }, 0);
         var longest = sorted.slice().sort(function (a, b) { return b.laps.length - a.laps.length; })[0];
         var trackValues = Object.keys(byTrack).map(function (key) { return byTrack[key]; }).sort(function (a, b) { return b.laps - a.laps; });
+        var venueNames = [];
+        var venueKeys = new Set();
+        sorted.forEach(function (session) {
+          var key = trackRecordKey(session.track);
+          if (venueKeys.has(key)) return;
+          venueKeys.add(key);
+          venueNames.push(session.track);
+        });
         elements.mileageCopy.textContent = "Souhrn všech uložených Alfano tréninků";
         appendRecordItem(elements.mileageGrid, "Celkem kol", String(totalLaps), sorted.length + " tréninků");
-        appendRecordItem(elements.mileageGrid, "Počet tratí", String(trackValues.length), trackValues.map(function (track) { return track.name; }).join(" · "));
+        appendRecordItem(elements.mileageGrid, "Počet tratí", String(venueNames.length), venueNames.join(" · "));
+        appendRecordItem(elements.mileageGrid, "Konfigurace tratí", String(trackValues.length), "samostatně vyhodnocované varianty");
         appendRecordItem(elements.mileageGrid, "Nejdelší trénink", longest.laps.length + " kol", longest.track + " · " + longest.time);
         appendRecordItem(elements.mileageGrid, "Průměr kol na trénink", (totalLaps / sorted.length).toFixed(1).replace(".", ","), "ze všech uložených jízd");
         appendRecordItem(elements.mileageGrid, "Orientační vzdálenost", gpsMeters ? (gpsMeters / 1000).toFixed(1).replace(".", ",") + " km" : "—", "součet kol s dostupnou GPS");
