@@ -925,7 +925,7 @@
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
       <div class="kp-ideal-potential" id="kp-ideal-potential"></div>
       <div class="kp-ideal-summary" id="kp-ideal-summary"></div>
-      <div class="kp-corner-key"><b>Aktuální nejrychlejší kolo</b><b class="is-ideal">Virtuální ideál zatáčky</b><span>Červená = největší skutečný rozdíl</span></div>
+      <div class="kp-corner-key"><b>Aktuální nejrychlejší kolo</b><b class="is-ideal">Virtuální ideál zatáčky</b><span>Červená šipka = potvrzený rozdíl stopy</span><span>Barevný bod = potvrzený odhad začátku zpomalování</span></div>
       <div class="kp-corner-visuals" id="kp-corner-visuals"></div>
       <div class="kp-map-details" id="kp-ideal-map-details"></div>
     </div>
@@ -3560,6 +3560,7 @@
           if (!best || distance < best.distance) {
             best = {
               distance: distance,
+              signed: (vy * dx - vx * dy) / Math.max(.000001, Math.sqrt(vx * vx + vy * vy)),
               point: [
                 path[i][0] + (path[i + 1][0] - path[i][0]) * part,
                 path[i][1] + (path[i + 1][1] - path[i][1]) * part
@@ -3568,6 +3569,75 @@
           }
         }
         return best;
+      }
+
+      function smoothGpsPath(path, radius) {
+        radius = radius || 2;
+        return (path || []).map(function (point, index) {
+          var from = Math.max(0, index - radius), to = Math.min(path.length - 1, index + radius), result = point.slice();
+          for (var valueIndex = 0; valueIndex < 2; valueIndex += 1) {
+            var values = [];
+            for (var sampleIndex = from; sampleIndex <= to; sampleIndex += 1) {
+              if (Number.isFinite(path[sampleIndex][valueIndex])) values.push(path[sampleIndex][valueIndex]);
+            }
+            if (values.length) result[valueIndex] = values.reduce(function (sum, value) { return sum + value; }, 0) / values.length;
+          }
+          return result;
+        });
+      }
+
+      function alignLapBySamples(path, referencePath) {
+        if (!path || !referencePath || path.length < 2 || referencePath.length < 2) return path;
+        var latOffsets = [], lonOffsets = [];
+        for (var index = 0; index < 32; index += 1) {
+          var fraction = index / 31;
+          var actual = gpsGateAtFraction(path, fraction), reference = gpsGateAtFraction(referencePath, fraction);
+          latOffsets.push(reference[0] - actual[0]);
+          lonOffsets.push(reference[1] - actual[1]);
+        }
+        var latShift = median(latOffsets), lonShift = median(lonOffsets);
+        return path.map(function (point) {
+          var aligned = point.slice();
+          aligned[0] += latShift;
+          aligned[1] += lonShift;
+          return aligned;
+        });
+      }
+
+      function cornerLineMetric(actualPath, idealPath, apexFraction) {
+        var start = Math.max(.08, apexFraction - .30), end = Math.min(.92, apexFraction + .30), samples = [];
+        for (var index = 0; index <= 20; index += 1) {
+          var fraction = start + (end - start) * index / 20;
+          var actual = gpsGateAtFraction(actualPath, fraction);
+          var match = nearestPathPoint(actual, idealPath);
+          if (match) samples.push({ fraction: fraction, actual: actual, ideal: match.point, signed: match.signed, distance: match.distance });
+        }
+        if (!samples.length) return null;
+        var signedValues = samples.map(function (sample) { return sample.signed; }).sort(function (a, b) { return a - b; });
+        var signedMedian = median(signedValues);
+        var lower = percentile(signedValues, .25), upper = percentile(signedValues, .75);
+        var representative = samples.slice().sort(function (a, b) {
+          return Math.abs(a.signed - signedMedian) - Math.abs(b.signed - signedMedian);
+        })[0];
+        return { signed: signedMedian, distance: Math.abs(signedMedian), lower: lower, upper: upper, spread: upper - lower, representative: representative };
+      }
+
+      function slowdownOnsetFraction(gpsLap, startFraction, apexFraction) {
+        var samples = lapDistanceSamples(gpsLap, 401);
+        if (!samples.length) return null;
+        var start = Math.max(0, startFraction), end = Math.max(start, apexFraction - .015);
+        for (var index = 4; index < samples.length - 4; index += 1) {
+          var sample = samples[index];
+          if (sample.fraction < start || sample.fraction > end) continue;
+          var before = samples[index - 4].speed, after = samples[index + 4].speed;
+          if (!Number.isFinite(before) || !Number.isFinite(after) || before - after < 3) continue;
+          var sustained = samples[index + 1].speed <= before - .8 && samples[index + 3].speed <= before - 1.8;
+          if (!sustained) continue;
+          var rpmBefore = samples[index - 4].point[3], rpmAfter = samples[index + 4].point[3];
+          var rpmSupports = !Number.isFinite(rpmBefore) || !Number.isFinite(rpmAfter) || rpmAfter <= rpmBefore + 250;
+          if (rpmSupports) return sample.fraction;
+        }
+        return null;
       }
 
       function nearestPathDistance(point, path) {
@@ -3670,15 +3740,12 @@
             return aligned;
           });
         }
-        comparisonPath = alignPath(comparisonPath, [
-          { point: profile.bestLapPath[0], atEnd: false },
-          { point: profile.bestLapPath[profile.bestLapPath.length - 1], atEnd: true }
-        ]);
+        comparisonPath = smoothGpsPath(alignLapBySamples(comparisonPath, profile.bestLapPath), 2);
         var idealPaths = profile.bestSectorPaths.map(function (path, index) {
           var anchors = [];
           if (index > 0) anchors.push({ point: profile.gates[index - 1], atEnd: false });
           if (index < profile.bestSectorPaths.length - 1) anchors.push({ point: profile.gates[index], atEnd: true });
-          return anchors.length ? alignPath(path, anchors) : path;
+          return smoothGpsPath(anchors.length ? alignPath(path, anchors) : path, 2);
         });
         var currentSamples = profile.boundaries.map(function (fraction) { return telemetrySampleAtFraction(currentBestGpsLap, fraction); });
         var currentCornerPaths = currentSamples.slice(0, -1).map(function (sample, index) {
@@ -3686,7 +3753,7 @@
           var anchors = [];
           if (index > 0) anchors.push({ point: profile.gates[index - 1], atEnd: false });
           if (index < currentSamples.length - 2) anchors.push({ point: profile.gates[index], atEnd: true });
-          return anchors.length ? alignPath(path, anchors) : path;
+          return smoothGpsPath(anchors.length ? alignPath(path, anchors) : path, 2);
         });
         var background = trackMapBackground(profile.track);
         if (background && (trackRecordKey(profile.track).indexOf("STEEL") !== -1 || trackRecordKey(profile.track).indexOf("TŘINEC") !== -1 || trackRecordKey(profile.track).indexOf("TRINEC") !== -1)) {
@@ -3763,21 +3830,62 @@
           elements.idealSummary.appendChild(card);
         }
         elements.cornerVisuals.innerHTML = "";
+        var confirmationLaps = (latest.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(latest, lap); });
+        var trackLength = gpsPathDistance(profile.bestLapPath);
+        function confirmedOnset(session, preferredLapNumber, startFraction, apexFraction) {
+          if (!session) return null;
+          var laps = (session.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(session, lap); });
+          var preferredLap = laps.find(function (lap) { return lap.lap === preferredLapNumber; });
+          var preferred = preferredLap ? slowdownOnsetFraction(preferredLap, startFraction, apexFraction) : null;
+          var values = laps.map(function (lap) { return slowdownOnsetFraction(lap, startFraction, apexFraction); }).filter(Number.isFinite).sort(function (a, b) { return a - b; });
+          if (!Number.isFinite(preferred) || values.length < 3) return null;
+          var center = median(values), lower = percentile(values, .25), upper = percentile(values, .75);
+          var spreadMeters = (upper - lower) * trackLength;
+          var preferredOffset = Math.abs(preferred - center) * trackLength;
+          return { fraction: preferred, spreadMeters: spreadMeters, preferredOffset: preferredOffset, samples: values.length, reliable: spreadMeters <= 3 && preferredOffset <= 3 };
+        }
         var cornerAnalyses = idealPaths.map(function (idealPath, index) {
           var actualPath = currentCornerPaths[index];
           if (!actualPath || actualPath.length < 2 || !idealPath || idealPath.length < 2) return null;
           var apexFraction = (profile.cornerFractions[index] - profile.boundaries[index]) / Math.max(.001, profile.boundaries[index + 1] - profile.boundaries[index]);
-          var windowStart = Math.max(.08, apexFraction - .30), windowEnd = Math.min(.92, apexFraction + .30);
-          var detail = { distance: 0, actual: gpsGateAtFraction(actualPath, apexFraction), ideal: gpsGateAtFraction(idealPath, apexFraction), fraction: apexFraction };
-          for (var sampleIndex = 0; sampleIndex <= 16; sampleIndex += 1) {
-            var fraction = windowStart + (windowEnd - windowStart) * sampleIndex / 16;
-            var actualPoint = gpsGateAtFraction(actualPath, fraction);
-            var match = nearestPathPoint(actualPoint, idealPath);
-            if (match && match.distance > detail.distance) detail = { distance: match.distance, actual: actualPoint, ideal: match.point, fraction: fraction };
-          }
+          var fastestMetric = cornerLineMetric(actualPath, idealPath, apexFraction);
+          var supportingMetrics = confirmationLaps.map(function (lap) {
+            var aligned = smoothGpsPath(alignLapBySamples(lap.points, profile.bestLapPath), 2);
+            var lapSamples = profile.boundaries.map(function (fraction) { return telemetrySampleAtFraction(lap, fraction); });
+            if (lapSamples.some(function (sample) { return !sample; })) return null;
+            var segment = sliceGpsPath(aligned, lapSamples[index].index, lapSamples[index + 1].index);
+            return cornerLineMetric(segment, idealPath, apexFraction);
+          }).filter(Boolean);
+          var signedValues = supportingMetrics.map(function (metric) { return metric.signed; }).sort(function (a, b) { return a - b; });
+          var signedCenter = signedValues.length ? median(signedValues) : NaN;
+          var signedLower = signedValues.length ? percentile(signedValues, .25) : NaN;
+          var signedUpper = signedValues.length ? percentile(signedValues, .75) : NaN;
+          var sameDirection = Number.isFinite(signedCenter) ? signedValues.filter(function (value) { return Math.sign(value) === Math.sign(signedCenter) && Math.abs(value) >= .35; }).length : 0;
+          var lineReliable = Boolean(fastestMetric && signedValues.length >= 3 && sameDirection >= Math.max(3, Math.ceil(signedValues.length * .7)) && signedUpper - signedLower <= .8 && Math.sign(fastestMetric.signed) === Math.sign(signedCenter) && Math.abs(signedCenter) >= .5);
+          var detail = fastestMetric ? {
+            distance: lineReliable ? Math.abs(signedCenter) : fastestMetric.distance,
+            actual: fastestMetric.representative.actual,
+            ideal: fastestMetric.representative.ideal,
+            fraction: fastestMetric.representative.fraction,
+            reliable: lineReliable,
+            rangeLow: lineReliable ? Math.min(Math.abs(signedLower), Math.abs(signedUpper)) : null,
+            rangeHigh: lineReliable ? Math.max(Math.abs(signedLower), Math.abs(signedUpper)) : null,
+            samples: signedValues.length
+          } : { distance: 0, actual: actualPath[0], ideal: idealPath[0], fraction: 0, reliable: false, samples: 0 };
           var actualMs = currentSamples[index + 1].elapsed - currentSamples[index].elapsed;
           var idealMs = profile.bestSectors[index];
-          return { index: index, actualPath: actualPath, idealPath: idealPath, detail: detail, actualMs: actualMs, idealMs: idealMs, gain: Math.max(0, actualMs - idealMs) };
+          var startFraction = profile.boundaries[index], endFraction = profile.boundaries[index + 1], cornerFraction = profile.cornerFractions[index];
+          var source = profile.bestSectorSources[index];
+          var sourceSession = source ? alfanoSessions.find(function (session) {
+            return trackConfigurationKey(session) === profile.configurationKey && (session.date || "") === (source.date || "") && (session.time || "") === (source.session || "");
+          }) : null;
+          var actualBrake = confirmedOnset(latest, currentBestGpsLap.lap, startFraction, cornerFraction);
+          var idealBrake = confirmedOnset(sourceSession, source ? source.lap : null, startFraction, cornerFraction);
+          function localBrake(onset) {
+            if (!onset || !onset.reliable) return null;
+            return { fraction: Math.max(0, Math.min(1, (onset.fraction - startFraction) / Math.max(.001, endFraction - startFraction))), spreadMeters: onset.spreadMeters, samples: onset.samples };
+          }
+          return { index: index, actualPath: actualPath, idealPath: idealPath, detail: detail, actualMs: actualMs, idealMs: idealMs, gain: Math.max(0, actualMs - idealMs), actualBrake: localBrake(actualBrake), idealBrake: localBrake(idealBrake) };
         }).filter(Boolean);
         if (cornerAnalyses.length) {
           var navigation = document.createElement("div");
@@ -3824,10 +3932,11 @@
             svg.appendChild(createSvgElement("polyline", { points: polyline(actualPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "9", "stroke-dasharray": "18 12", "stroke-linecap": "round", "stroke-linejoin": "round" }));
             svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "rgba(0,0,0,.82)", "stroke-width": "16", "stroke-linecap": "round", "stroke-linejoin": "round" }));
             svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "var(--primary)", "stroke-width": "9", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-            if (detail.distance >= .5 && detail.distance <= 4) {
+            if (detail.reliable && detail.distance <= 4) {
               var from = position(detail.actual), to = position(detail.ideal);
               svg.appendChild(createSvgElement("line", { x1: from[0], y1: from[1], x2: to[0], y2: to[1], stroke: "#ff5964", "stroke-width": "7", "stroke-linecap": "round", "marker-end": "url(#kp-arrow-" + index + ")" }));
-              svg.appendChild(createSvgElement("text", { x: (from[0] + to[0]) / 2 + 12, y: (from[1] + to[1]) / 2 - 12, fill: "white", "font-size": "20", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, detail.distance.toFixed(1).replace(".", ",") + " m"));
+              var rangeText = detail.rangeLow.toFixed(1).replace(".", ",") + "–" + detail.rangeHigh.toFixed(1).replace(".", ",") + " m";
+              svg.appendChild(createSvgElement("text", { x: (from[0] + to[0]) / 2 + 12, y: (from[1] + to[1]) / 2 - 12, fill: "white", "font-size": "20", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, rangeText));
             }
             var apexFraction = (profile.cornerFractions[index] - profile.boundaries[index]) / Math.max(.001, profile.boundaries[index + 1] - profile.boundaries[index]);
             [{ fraction: .08, text: "NÁJEZD" }, { fraction: Math.max(.12, Math.min(.88, apexFraction)), text: "VRCHOL" }, { fraction: .92, text: "VÝJEZD" }].forEach(function (mark) {
@@ -3835,13 +3944,24 @@
               svg.appendChild(createSvgElement("circle", { cx: point[0], cy: point[1], r: "9", fill: "var(--primary)", stroke: "black", "stroke-width": "3" }));
               svg.appendChild(createSvgElement("text", { x: point[0] + 14, y: point[1] - 13, fill: "white", "font-size": "17", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, mark.text));
             });
+            function drawBrakeMarker(brake, path, color, label, yOffset) {
+              if (!brake) return;
+              var brakePoint = position(gpsGateAtFraction(path, brake.fraction));
+              svg.appendChild(createSvgElement("circle", { cx: brakePoint[0], cy: brakePoint[1], r: "13", fill: color, stroke: "white", "stroke-width": "3" }));
+              svg.appendChild(createSvgElement("text", { x: brakePoint[0] + 18, y: brakePoint[1] + yOffset, fill: "white", "font-size": "16", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, label));
+            }
+            drawBrakeMarker(analysis.actualBrake, actualPath, "var(--viz-series-2)", "ZAČÁTEK ZPOMALENÍ · AKTUÁLNÍ", -10);
+            drawBrakeMarker(analysis.idealBrake, idealPath, "var(--primary)", "ZAČÁTEK ZPOMALENÍ · VZOR", 24);
             var source = profile.bestSectorSources[index];
             var phase = detail.fraction < apexFraction - .10 ? "na nájezdu" : detail.fraction > apexFraction + .10 ? "na výjezdu" : "u vrcholu";
-            var instruction = detail.distance >= 1 && detail.distance <= 4
-              ? "V zatáčce " + (index + 1) + " se " + phase + " přibliž žluté stopě asi o " + detail.distance.toFixed(1).replace(".", ",") + " m. Sleduj červenou šipku."
-              : "V zatáčce " + (index + 1) + " je stopa velmi podobná ideálu. Soustřeď se hlavně na její zopakování.";
+            var instruction = detail.reliable && detail.distance <= 4
+              ? "V zatáčce " + (index + 1) + " se " + phase + " přibliž žluté stopě přibližně v rozsahu " + detail.rangeLow.toFixed(1).replace(".", ",") + "–" + detail.rangeHigh.toFixed(1).replace(".", ",") + " m. Rozdíl potvrdilo " + detail.samples + " kol."
+              : "GPS nepotvrdila rozdíl stopy v této zatáčce dostatečně spolehlivě. Porovnej modrou a žlutou stopu, ale nedáváme přesný metrový pokyn.";
             var note = document.createElement("p");
-            note.textContent = instruction + " Žlutý průjezd pochází z kola " + (source ? source.lap : "—") + ".";
+            var brakeText = analysis.actualBrake && analysis.idealBrake
+              ? " Barevné body ukazují potvrzený odhad začátku zpomalování; nejde o měření brzdového pedálu."
+              : " Začátek zpomalování se zobrazí jen při shodě alespoň tří kol.";
+            note.textContent = instruction + " Žlutý průjezd pochází z kola " + (source ? source.lap : "—") + "." + brakeText;
             var task = document.createElement("div");
             task.className = "kp-coach-task";
             task.textContent = "Úkol pro další jízdu: " + instruction;
@@ -3860,11 +3980,11 @@
             navigation.appendChild(button);
           });
           var priority = cornerAnalyses.filter(function (analysis) {
-            return analysis.detail.distance >= 1 && analysis.detail.distance <= 4;
+            return analysis.detail.reliable && analysis.detail.distance <= 4;
           }).sort(function (first, second) { return second.gain - first.gain; })[0] || cornerAnalyses.slice().sort(function (first, second) { return second.gain - first.gain; })[0];
           renderCoachCorner(priority.index);
         }
-        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Modrá je nejrychlejší kolo aktuálního tréninku, žlutá nejlepší známý průjezd dané zatáčky. Detail se pouze přibližuje; rozdíl stopy se uměle nezvětšuje.";
+        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Modrá je nejrychlejší kolo aktuálního tréninku, žlutá nejlepší známý průjezd dané zatáčky. Metry se zobrazují jen při shodě směru alespoň ve třech kolech a jako rozsah, nikoli maximum. Body zpomalování jsou odhad z GPS rychlosti, podélného zpomalení a podpůrně z otáček; nejde o snímač brzdy.";
       }
 
       function renderAlfanoChart(sortedSessions) {
