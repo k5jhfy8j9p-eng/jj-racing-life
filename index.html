@@ -581,6 +581,17 @@
     #karting-program-app .kp-ideal-coach-card span { margin-top: 5px; color: var(--foreground); }
     #karting-program-app .kp-ideal-coach-card small { margin-top: 5px; color: var(--muted-foreground); line-height: 1.35; }
     #karting-program-app .kp-ideal-potential { padding: 12px 14px; border: 1px solid rgba(255,212,0,.45); border-radius: 11px; background: rgba(255,212,0,.08); color: var(--foreground); }
+    #karting-program-app .kp-corner-visuals { display: grid; gap: 10px; }
+    #karting-program-app .kp-coach-corner-nav { display: flex; flex-wrap: wrap; gap: 7px; }
+    #karting-program-app .kp-coach-corner-nav button[aria-selected="true"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+    #karting-program-app .kp-corner-visual { padding: clamp(12px, 2vw, 20px); border: 1px solid var(--border); border-radius: 14px; background: #090e15; }
+    #karting-program-app .kp-corner-visual h3 { margin: 0 0 10px; font-size: clamp(1.15rem, 2vw, 1.55rem); }
+    #karting-program-app .kp-corner-visual svg { display: block; width: 100%; min-height: 420px; max-height: 66dvh; border-radius: 11px; background: radial-gradient(circle at 50% 50%, #172534, #070b11 72%); }
+    #karting-program-app .kp-corner-visual p { margin: 10px 0 0; color: var(--foreground); font-size: clamp(.98rem, 1.5vw, 1.18rem); line-height: 1.45; }
+    #karting-program-app .kp-coach-task { margin-top: 10px; padding: 12px 14px; border-radius: 10px; border-left: 4px solid var(--primary); background: rgba(255,212,0,.09); font-weight: 750; }
+    #karting-program-app .kp-corner-key { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-bottom: 8px; color: var(--muted-foreground); font-size: .82rem; }
+    #karting-program-app .kp-corner-key b::before { content: ""; display: inline-block; width: 18px; height: 4px; margin-right: 5px; border-radius: 3px; background: var(--viz-series-2); vertical-align: middle; }
+    #karting-program-app .kp-corner-key b.is-ideal::before { background: var(--primary); }
     #karting-program-app .kp-ideal-potential strong { color: var(--primary); }
     @media (max-width: 720px) { #karting-program-app .kp-ideal-summary { grid-template-columns: 1fr; } }
     #karting-program-app #kp-ideal-map-dialog { width: min(1180px, calc(100% - 24px)); max-height: calc(100dvh - 24px); }
@@ -914,6 +925,8 @@
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
       <div class="kp-ideal-potential" id="kp-ideal-potential"></div>
       <div class="kp-ideal-summary" id="kp-ideal-summary"></div>
+      <div class="kp-corner-key"><b>Aktuální nejrychlejší kolo</b><b class="is-ideal">Virtuální ideál zatáčky</b><span>Červená = největší skutečný rozdíl</span></div>
+      <div class="kp-corner-visuals" id="kp-corner-visuals"></div>
       <div class="kp-map-details" id="kp-ideal-map-details"></div>
     </div>
   </dialog>
@@ -1300,6 +1313,7 @@
         idealMapDetails: root.querySelector("#kp-ideal-map-details"),
         idealPotential: root.querySelector("#kp-ideal-potential"),
         idealSummary: root.querySelector("#kp-ideal-summary"),
+        cornerVisuals: root.querySelector("#kp-corner-visuals"),
         alfanoTotalLaps: root.querySelector("#kp-alfano-total-laps"),
         alfanoTotalLapsNote: root.querySelector("#kp-alfano-total-laps-note"),
         openMileage: root.querySelector("#kp-open-mileage"),
@@ -3634,6 +3648,7 @@
           elements.idealMapDetails.textContent = latest ? "Časy jsou uložené, ale GPS stopa ještě ne. Nahraj ZIPy této tratě znovu." : "Nejdřív nahraj data z Alfana.";
           elements.idealPotential.textContent = "";
           elements.idealSummary.innerHTML = "";
+          elements.cornerVisuals.innerHTML = "";
           return;
         }
         elements.idealMap.removeAttribute("hidden");
@@ -3655,10 +3670,22 @@
             return aligned;
           });
         }
+        comparisonPath = alignPath(comparisonPath, [
+          { point: profile.bestLapPath[0], atEnd: false },
+          { point: profile.bestLapPath[profile.bestLapPath.length - 1], atEnd: true }
+        ]);
         var idealPaths = profile.bestSectorPaths.map(function (path, index) {
           var anchors = [];
           if (index > 0) anchors.push({ point: profile.gates[index - 1], atEnd: false });
           if (index < profile.bestSectorPaths.length - 1) anchors.push({ point: profile.gates[index], atEnd: true });
+          return anchors.length ? alignPath(path, anchors) : path;
+        });
+        var currentSamples = profile.boundaries.map(function (fraction) { return telemetrySampleAtFraction(currentBestGpsLap, fraction); });
+        var currentCornerPaths = currentSamples.slice(0, -1).map(function (sample, index) {
+          var path = sliceGpsPath(comparisonPath, sample.index, currentSamples[index + 1].index);
+          var anchors = [];
+          if (index > 0) anchors.push({ point: profile.gates[index - 1], atEnd: false });
+          if (index < currentSamples.length - 2) anchors.push({ point: profile.gates[index], atEnd: true });
           return anchors.length ? alignPath(path, anchors) : path;
         });
         var background = trackMapBackground(profile.track);
@@ -3735,7 +3762,109 @@
           card.innerHTML = "<strong>Stopa je velmi podobná</strong><span>V rozpoznaných zatáčkách není potvrzený boční rozdíl větší než 1,0 m.</span><small>Z malých odchylek nedáváme jezdecký pokyn, protože mohou být způsobené GPS.</small>";
           elements.idealSummary.appendChild(card);
         }
-        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Porovnávají se pouze data stejné konfigurace tratě. Každá zatáčka má vlastní úsek od rovnější části před nájezdem po rovnější část za výjezdem. Hodnoty nad 4 m se nezobrazují jako stopa — znamenají chybu GPS, nikoli reálný jezdecký rozdíl.";
+        elements.cornerVisuals.innerHTML = "";
+        var cornerAnalyses = idealPaths.map(function (idealPath, index) {
+          var actualPath = currentCornerPaths[index];
+          if (!actualPath || actualPath.length < 2 || !idealPath || idealPath.length < 2) return null;
+          var apexFraction = (profile.cornerFractions[index] - profile.boundaries[index]) / Math.max(.001, profile.boundaries[index + 1] - profile.boundaries[index]);
+          var windowStart = Math.max(.08, apexFraction - .30), windowEnd = Math.min(.92, apexFraction + .30);
+          var detail = { distance: 0, actual: gpsGateAtFraction(actualPath, apexFraction), ideal: gpsGateAtFraction(idealPath, apexFraction), fraction: apexFraction };
+          for (var sampleIndex = 0; sampleIndex <= 16; sampleIndex += 1) {
+            var fraction = windowStart + (windowEnd - windowStart) * sampleIndex / 16;
+            var actualPoint = gpsGateAtFraction(actualPath, fraction);
+            var match = nearestPathPoint(actualPoint, idealPath);
+            if (match && match.distance > detail.distance) detail = { distance: match.distance, actual: actualPoint, ideal: match.point, fraction: fraction };
+          }
+          var actualMs = currentSamples[index + 1].elapsed - currentSamples[index].elapsed;
+          var idealMs = profile.bestSectors[index];
+          return { index: index, actualPath: actualPath, idealPath: idealPath, detail: detail, actualMs: actualMs, idealMs: idealMs, gain: Math.max(0, actualMs - idealMs) };
+        }).filter(Boolean);
+        if (cornerAnalyses.length) {
+          var navigation = document.createElement("div");
+          navigation.className = "kp-coach-corner-nav";
+          var focus = document.createElement("article");
+          focus.className = "kp-corner-visual";
+          elements.cornerVisuals.appendChild(navigation);
+          elements.cornerVisuals.appendChild(focus);
+          function renderCoachCorner(selectedIndex) {
+            var analysis = cornerAnalyses.find(function (item) { return item.index === selectedIndex; }) || cornerAnalyses[0];
+            Array.from(navigation.children).forEach(function (button) {
+              button.setAttribute("aria-selected", String(Number(button.dataset.corner) === analysis.index));
+            });
+            focus.innerHTML = "";
+            var index = analysis.index, actualPath = analysis.actualPath, idealPath = analysis.idealPath, detail = analysis.detail;
+            var title = document.createElement("h3");
+            title.textContent = "Zatáčka " + (index + 1) + " · zde lze získat přibližně " + formatLapTime(analysis.gain) + " s";
+            var svg = createSvgElement("svg", { viewBox: "0 0 760 480", role: "img", "aria-label": "Výukové porovnání stopy v zatáčce " + (index + 1) });
+            var defs = createSvgElement("defs", {});
+            var marker = createSvgElement("marker", { id: "kp-arrow-" + index, markerWidth: "10", markerHeight: "10", refX: "8", refY: "3", orient: "auto", markerUnits: "strokeWidth" });
+            marker.appendChild(createSvgElement("path", { d: "M0,0 L0,6 L9,3 z", fill: "#ff5964" }));
+            defs.appendChild(marker);
+            svg.appendChild(defs);
+            var latitude = actualPath.concat(idealPath).reduce(function (sum, point) { return sum + point[0]; }, 0) / (actualPath.length + idealPath.length);
+            var scaleX = 111320 * Math.cos(latitude * Math.PI / 180);
+            var origin = actualPath[0];
+            function localPoint(point) { return [(point[1] - origin[1]) * scaleX, (point[0] - origin[0]) * 111320]; }
+            var localActual = actualPath.map(localPoint), localIdeal = idealPath.map(localPoint), allLocal = localActual.concat(localIdeal);
+            var minX = Math.min.apply(null, allLocal.map(function (point) { return point[0]; }));
+            var maxX = Math.max.apply(null, allLocal.map(function (point) { return point[0]; }));
+            var minY = Math.min.apply(null, allLocal.map(function (point) { return point[1]; }));
+            var maxY = Math.max.apply(null, allLocal.map(function (point) { return point[1]; }));
+            var rangeX = Math.max(14, maxX - minX), rangeY = Math.max(14, maxY - minY);
+            var fit = Math.min(650 / rangeX, 370 / rangeY), offsetX = (760 - rangeX * fit) / 2, offsetY = (480 - rangeY * fit) / 2;
+            function position(point) {
+              var local = localPoint(point);
+              return [offsetX + (local[0] - minX) * fit, 480 - offsetY - (local[1] - minY) * fit];
+            }
+            function polyline(path) { return path.map(function (point) { var p = position(point); return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" "); }
+            for (var grid = 50; grid < 760; grid += 50) svg.appendChild(createSvgElement("line", { x1: grid, y1: 0, x2: grid, y2: 480, stroke: "rgba(255,255,255,.035)", "stroke-width": "1" }));
+            for (var gridY = 50; gridY < 480; gridY += 50) svg.appendChild(createSvgElement("line", { x1: 0, y1: gridY, x2: 760, y2: gridY, stroke: "rgba(255,255,255,.035)", "stroke-width": "1" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "#3a4653", "stroke-width": "42", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: ".72" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(actualPath), fill: "none", stroke: "rgba(0,0,0,.8)", "stroke-width": "15", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(actualPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "9", "stroke-dasharray": "18 12", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "rgba(0,0,0,.82)", "stroke-width": "16", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "var(--primary)", "stroke-width": "9", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            if (detail.distance >= .5 && detail.distance <= 4) {
+              var from = position(detail.actual), to = position(detail.ideal);
+              svg.appendChild(createSvgElement("line", { x1: from[0], y1: from[1], x2: to[0], y2: to[1], stroke: "#ff5964", "stroke-width": "7", "stroke-linecap": "round", "marker-end": "url(#kp-arrow-" + index + ")" }));
+              svg.appendChild(createSvgElement("text", { x: (from[0] + to[0]) / 2 + 12, y: (from[1] + to[1]) / 2 - 12, fill: "white", "font-size": "20", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, detail.distance.toFixed(1).replace(".", ",") + " m"));
+            }
+            var apexFraction = (profile.cornerFractions[index] - profile.boundaries[index]) / Math.max(.001, profile.boundaries[index + 1] - profile.boundaries[index]);
+            [{ fraction: .08, text: "NÁJEZD" }, { fraction: Math.max(.12, Math.min(.88, apexFraction)), text: "VRCHOL" }, { fraction: .92, text: "VÝJEZD" }].forEach(function (mark) {
+              var point = position(gpsGateAtFraction(idealPath, mark.fraction));
+              svg.appendChild(createSvgElement("circle", { cx: point[0], cy: point[1], r: "9", fill: "var(--primary)", stroke: "black", "stroke-width": "3" }));
+              svg.appendChild(createSvgElement("text", { x: point[0] + 14, y: point[1] - 13, fill: "white", "font-size": "17", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, mark.text));
+            });
+            var source = profile.bestSectorSources[index];
+            var phase = detail.fraction < apexFraction - .10 ? "na nájezdu" : detail.fraction > apexFraction + .10 ? "na výjezdu" : "u vrcholu";
+            var instruction = detail.distance >= 1 && detail.distance <= 4
+              ? "V zatáčce " + (index + 1) + " se " + phase + " přibliž žluté stopě asi o " + detail.distance.toFixed(1).replace(".", ",") + " m. Sleduj červenou šipku."
+              : "V zatáčce " + (index + 1) + " je stopa velmi podobná ideálu. Soustřeď se hlavně na její zopakování.";
+            var note = document.createElement("p");
+            note.textContent = instruction + " Žlutý průjezd pochází z kola " + (source ? source.lap : "—") + ".";
+            var task = document.createElement("div");
+            task.className = "kp-coach-task";
+            task.textContent = "Úkol pro další jízdu: " + instruction;
+            focus.appendChild(title);
+            focus.appendChild(svg);
+            focus.appendChild(note);
+            focus.appendChild(task);
+          }
+          cornerAnalyses.forEach(function (analysis) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "btn";
+            button.dataset.corner = String(analysis.index);
+            button.textContent = "Z" + (analysis.index + 1) + " · −" + formatLapTime(analysis.gain) + " s";
+            button.addEventListener("click", function () { renderCoachCorner(analysis.index); });
+            navigation.appendChild(button);
+          });
+          var priority = cornerAnalyses.filter(function (analysis) {
+            return analysis.detail.distance >= 1 && analysis.detail.distance <= 4;
+          }).sort(function (first, second) { return second.gain - first.gain; })[0] || cornerAnalyses.slice().sort(function (first, second) { return second.gain - first.gain; })[0];
+          renderCoachCorner(priority.index);
+        }
+        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Modrá je nejrychlejší kolo aktuálního tréninku, žlutá nejlepší známý průjezd dané zatáčky. Detail se pouze přibližuje; rozdíl stopy se uměle nezvětšuje.";
       }
 
       function renderAlfanoChart(sortedSessions) {
