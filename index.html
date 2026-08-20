@@ -805,7 +805,7 @@
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-records" title="Zobrazit síň rekordů"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-latest" title="Zobrazit report posledního tréninku"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-consistency" title="Zobrazit časy jednotlivých kol"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></button>
-        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-ideal-map" title="Zobrazit ideální GPS stopu"><span>Virtuální ideál</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">výukové porovnání</small></button>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-ideal-map" title="Zobrazit ideální GPS stopu"><span>Virtuální ideál</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">ideál po zatáčkách</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-mileage" title="Zobrazit přehled nájezdu"><span>Celkem kol</span><strong id="kp-alfano-total-laps">—</strong><small id="kp-alfano-total-laps-note">0 tréninků</small></button>
       </div>
       <div class="kp-alfano-chart-wrap">
@@ -909,7 +909,7 @@
         </div>
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
-      <div class="kp-map-legend"><span>Nejrychlejší reálné kolo</span><span class="is-ideal">Virtuální ideál</span><small class="kp-map-source">Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
+      <div class="kp-map-legend"><span>Nejrychlejší kolo aktuálního tréninku</span><span class="is-ideal">Virtuální ideál</span><small class="kp-map-source">Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
       <div class="kp-chart-empty" id="kp-ideal-map-empty">Pro zobrazení stopy nahraj Alfano ZIPy znovu.</div>
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
       <div class="kp-ideal-potential" id="kp-ideal-potential"></div>
@@ -3356,7 +3356,13 @@
         var index = Math.max(0, Math.min(points.length - 1, Math.floor(position)));
         var next = Math.min(points.length - 1, index + 1);
         var part = Math.max(0, Math.min(1, position - index));
-        return [points[index][0] + (points[next][0] - points[index][0]) * part, points[index][1] + (points[next][1] - points[index][1]) * part];
+        var length = Math.max(points[index].length, points[next].length);
+        var result = [];
+        for (var valueIndex = 0; valueIndex < length; valueIndex += 1) {
+          var first = Number(points[index][valueIndex]), second = Number(points[next][valueIndex]);
+          result.push(Number.isFinite(first) && Number.isFinite(second) ? first + (second - first) * part : Number.isFinite(first) ? first : second);
+        }
+        return result;
       }
 
       function sliceGpsPath(points, start, end) {
@@ -3379,43 +3385,70 @@
         Object.keys(groups).forEach(function (key) {
           var candidates = groups[key].flatMap(function (session) {
             return session.gpsLaps.map(function (lap) { return { session: session, lap: lap }; });
-          }).filter(function (item) { return telemetryLapIsAnalyzable(item.session, item.lap); });
+          }).filter(function (item) {
+            if (!hasTelemetry(item.lap) || item.lap.points.length <= 100) return false;
+            var plausibleNumbers = new Set(plausibleTimedLaps(item.session).map(function (lap) { return lap.lap; }));
+            return plausibleNumbers.has(item.lap.lap);
+          });
           if (!candidates.length) return;
           var reference = candidates.reduce(function (best, item) { return item.lap.ms < best.lap.ms ? item : best; }, candidates[0]);
-          var profile = { track: reference.session.track, configurationKey: key, gates: [gpsGateAtFraction(reference.lap.points, 1 / 3), gpsGateAtFraction(reference.lap.points, 2 / 3)], bestSectors: [null, null, null], bestSectorPaths: [null, null, null], bestSectorSources: [null, null, null] };
+          var corners = detectCorners(reference.lap);
+          if (corners.length < 2) return;
+          var cornerFractions = corners.map(function (corner) { return corner.fraction; }).sort(function (a, b) { return a - b; });
+          var boundaries = [0];
+          for (var boundaryIndex = 0; boundaryIndex < cornerFractions.length - 1; boundaryIndex += 1) {
+            boundaries.push((cornerFractions[boundaryIndex] + cornerFractions[boundaryIndex + 1]) / 2);
+          }
+          boundaries.push(1);
+          var profile = {
+            track: reference.session.track,
+            configurationKey: key,
+            cornerFractions: cornerFractions,
+            boundaries: boundaries,
+            gates: boundaries.slice(1, -1).map(function (fraction) { return gpsGateAtFraction(reference.lap.points, fraction); }),
+            bestSectors: new Array(cornerFractions.length).fill(null),
+            bestSectorPaths: new Array(cornerFractions.length).fill(null),
+            bestSectorSources: new Array(cornerFractions.length).fill(null)
+          };
           profile.trackReferencePaths = candidates.slice().sort(function (a, b) { return a.lap.ms - b.lap.ms; }).slice(0, 12).map(function (item) {
             return item.lap.points.filter(function (point, index) { return index % 4 === 0 || index === item.lap.points.length - 1; });
           });
           candidates.forEach(function (item) {
-            var first = nearestGpsGate(item.lap.points, profile.gates[0], 0.15, 0.55);
-            var second = nearestGpsGate(item.lap.points, profile.gates[1], 0.45, 0.85);
-            if (!first || !second || first.distance > 8 || second.distance > 8 || first.position >= second.position) return;
-            var last = item.lap.points.length - 1;
-            var firstMs = item.lap.ms * first.position / last;
-            var secondMs = item.lap.ms * second.position / last;
-            var sectors = [firstMs, secondMs - firstMs, item.lap.ms - secondMs];
-            if (sectors.some(function (value) { return !Number.isFinite(value) || value <= 0; })) return;
-            var sectorPaths = [sliceGpsPath(item.lap.points, 0, first.position), sliceGpsPath(item.lap.points, first.position, second.position), sliceGpsPath(item.lap.points, second.position, last)];
+            var samples = boundaries.map(function (fraction) { return telemetrySampleAtFraction(item.lap, fraction); });
+            if (samples.some(function (sample) { return !sample; })) return;
+            var sectors = [];
+            var paths = [];
+            for (var index = 0; index < samples.length - 1; index += 1) {
+              var duration = samples[index + 1].elapsed - samples[index].elapsed;
+              if (!Number.isFinite(duration) || duration <= 0) return;
+              sectors.push(duration);
+              paths.push(sliceGpsPath(item.lap.points, samples[index].index, samples[index + 1].index));
+            }
             item.session.virtualSectors.push({ lap: item.lap.lap, sectors: sectors.map(Math.round) });
-            sectors.forEach(function (value, index) {
-              if (!Number.isFinite(profile.bestSectors[index]) || value < profile.bestSectors[index] || !Array.isArray(profile.bestSectorPaths[index])) {
-                profile.bestSectors[index] = value;
-                profile.bestSectorPaths[index] = sectorPaths[index];
-                profile.bestSectorSources[index] = { session: item.session.time || "", date: item.session.date || "", lap: item.lap.lap, ms: Math.round(value) };
+            sectors.forEach(function (duration, index) {
+              if (!Number.isFinite(profile.bestSectors[index]) || duration < profile.bestSectors[index]) {
+                profile.bestSectors[index] = duration;
+                profile.bestSectorPaths[index] = paths[index];
+                profile.bestSectorSources[index] = {
+                  session: item.session.time || "",
+                  date: item.session.date || "",
+                  lap: item.lap.lap,
+                  ms: Math.round(duration),
+                  corner: index + 1
+                };
               }
             });
-            if (!Number.isFinite(profile.bestLapMs) || item.lap.ms < profile.bestLapMs || !Array.isArray(profile.bestLapPath)) {
+            if (!Number.isFinite(profile.bestLapMs) || item.lap.ms < profile.bestLapMs) {
               profile.bestLapMs = item.lap.ms;
               profile.bestLapPath = item.lap.points;
               profile.bestLapSource = { session: item.session.time || "", date: item.session.date || "", lap: item.lap.lap };
             }
           });
-          if (profile.bestSectors.every(Number.isFinite)) {
+          if (profile.bestSectors.every(Number.isFinite) && profile.bestSectorPaths.every(Array.isArray)) {
             profile.theoreticalMs = Math.round(profile.bestSectors.reduce(function (sum, value) { return sum + value; }, 0));
             alfanoSectorProfiles[key] = profile;
           }
         });
-        // Zmenšené GPS body ponecháváme u tréninku pro Datové centrum.
         saveAlfanoSectorProfiles();
       }
 
@@ -3481,7 +3514,40 @@
         return { max: Math.round(Math.max.apply(null, speeds)), min: Math.round(Math.min.apply(null, speeds)), slowdown: onset };
       }
 
+      function nearestPathPoint(point, path) {
+        if (!point || !path || path.length < 2) return null;
+        var latitude = point[0] * Math.PI / 180;
+        var scaleX = 111320 * Math.cos(latitude);
+        var best = null;
+        for (var i = 0; i < path.length - 1; i += 1) {
+          var ax = (path[i][1] - point[1]) * scaleX;
+          var ay = (path[i][0] - point[0]) * 111320;
+          var bx = (path[i + 1][1] - point[1]) * scaleX;
+          var by = (path[i + 1][0] - point[0]) * 111320;
+          var vx = bx - ax, vy = by - ay;
+          var denominator = vx * vx + vy * vy;
+          var part = denominator ? Math.max(0, Math.min(1, -(ax * vx + ay * vy) / denominator)) : 0;
+          var dx = ax + part * vx, dy = ay + part * vy;
+          var distance = Math.sqrt(dx * dx + dy * dy);
+          if (!best || distance < best.distance) {
+            best = {
+              distance: distance,
+              point: [
+                path[i][0] + (path[i + 1][0] - path[i][0]) * part,
+                path[i][1] + (path[i + 1][1] - path[i][1]) * part
+              ]
+            };
+          }
+        }
+        return best;
+      }
+
       function nearestPathDistance(point, path) {
+        var match = nearestPathPoint(point, path);
+        return match ? match.distance : Infinity;
+      }
+
+      function legacyNearestPathDistance(point, path) {
         if (!point || !path || path.length < 2) return Infinity;
         var latitude = point[0] * Math.PI / 180;
         var scaleX = 111320 * Math.cos(latitude);
@@ -3540,7 +3606,13 @@
         var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
         var latest = sorted[sorted.length - 1];
         var profile = latest ? alfanoSectorProfiles[trackConfigurationKey(latest)] : null;
-        var hasPaths = profile && Array.isArray(profile.bestLapPath) && Array.isArray(profile.bestSectorPaths) && profile.bestSectorPaths.every(Array.isArray);
+        var currentBestGpsLap = latest ? gpsLapFor(latest, latest.bestLap) : null;
+        if (latest && !hasTelemetry(currentBestGpsLap)) {
+          currentBestGpsLap = (latest.gpsLaps || []).filter(function (lap) { return telemetryLapIsAnalyzable(latest, lap); }).sort(function (a, b) { return a.ms - b.ms; })[0] || null;
+        }
+        var comparisonPath = currentBestGpsLap && currentBestGpsLap.points;
+        var comparisonMs = currentBestGpsLap && currentBestGpsLap.ms;
+        var hasPaths = profile && Array.isArray(comparisonPath) && Array.isArray(profile.bestSectorPaths) && profile.bestSectorPaths.every(Array.isArray);
         elements.idealMap.innerHTML = "";
         if (!hasPaths) {
           elements.idealMap.setAttribute("hidden", "");
@@ -3552,7 +3624,7 @@
         }
         elements.idealMap.removeAttribute("hidden");
         elements.idealMapEmpty.setAttribute("hidden", "");
-        elements.idealMapCopy.textContent = profile.track + " · virtuální ideál " + formatLapTime(profile.theoreticalMs) + " s · nejrychlejší reálné kolo " + formatLapTime(profile.bestLapMs) + " s";
+        elements.idealMapCopy.textContent = profile.track + " · virtuální ideál " + formatLapTime(profile.theoreticalMs) + " s · nejrychlejší kolo aktuálního tréninku " + formatLapTime(comparisonMs) + " s";
         function alignPath(path, anchors) {
           var shift = anchors.reduce(function (sum, anchor) {
             var actual = anchor.atEnd ? path[path.length - 1] : path[0];
@@ -3569,17 +3641,18 @@
             return aligned;
           });
         }
-        var idealPaths = [
-          alignPath(profile.bestSectorPaths[0], [{ point: profile.gates[0], atEnd: true }]),
-          alignPath(profile.bestSectorPaths[1], [{ point: profile.gates[0], atEnd: false }, { point: profile.gates[1], atEnd: true }]),
-          alignPath(profile.bestSectorPaths[2], [{ point: profile.gates[1], atEnd: false }])
-        ];
+        var idealPaths = profile.bestSectorPaths.map(function (path, index) {
+          var anchors = [];
+          if (index > 0) anchors.push({ point: profile.gates[index - 1], atEnd: false });
+          if (index < profile.bestSectorPaths.length - 1) anchors.push({ point: profile.gates[index], atEnd: true });
+          return anchors.length ? alignPath(path, anchors) : path;
+        });
         var background = trackMapBackground(profile.track);
         if (background && (trackRecordKey(profile.track).indexOf("STEEL") !== -1 || trackRecordKey(profile.track).indexOf("TŘINEC") !== -1 || trackRecordKey(profile.track).indexOf("TRINEC") !== -1)) {
           background.minLat = 49.6887052727;
           background.maxLat = 49.6941947273;
         }
-        var allPoints = [profile.bestLapPath].concat(idealPaths).flat();
+        var allPoints = [comparisonPath].concat(idealPaths).flat();
         var width = 1100, height = 888, padding = background ? 0 : 28;
         if (!background) {
           background = automaticAerialBackground(allPoints, width, height);
@@ -3606,32 +3679,40 @@
           elements.idealMap.appendChild(createSvgElement("image", { href: background.src, x: "0", y: "0", width: width, height: height, preserveAspectRatio: "none" }));
         }
         elements.idealMap.appendChild(createSvgElement("rect", { x: "0", y: "0", width: width, height: height, fill: background ? "rgba(3,8,13,.14)" : "rgba(3,8,13,.24)" }));
-        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "1.5", "stroke-dasharray": "5 4", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "4", "stroke-dasharray": "10 7", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         idealPaths.forEach(function (path) {
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.6)", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.72)", "stroke-width": "8", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "4", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         });
         var idealLapPath = idealPaths.reduce(function (all, path, index) { return all.concat(index ? path.slice(1) : path); }, []);
-        var teachingCorners = detectTeachingCorners(profile.bestLapPath, idealLapPath);
+        var teachingCorners = (profile.cornerFractions || []).map(function (fraction, index) {
+          var referencePoint = gpsGateAtFraction(comparisonPath, fraction);
+          return { fraction: fraction, point: referencePoint, distance: nearestPathDistance(referencePoint, idealPaths[index] || idealLapPath), segment: index };
+        });
         teachingCorners.forEach(function (corner, index) {
           if (corner.distance < 1.0 || corner.distance > 4.0) return;
           var marker = svgPosition(corner.point);
-          elements.idealMap.appendChild(createSvgElement("circle", { cx: marker[0].toFixed(1), cy: marker[1].toFixed(1), r: "10", fill: "rgba(255,212,0,.22)", stroke: "var(--primary)", "stroke-width": "3" }));
-          elements.idealMap.appendChild(createSvgElement("text", { x: (marker[0] + 14).toFixed(1), y: (marker[1] - 12).toFixed(1), fill: "white", "font-size": "14", "font-weight": "800" }, "Z" + (index + 1) + " · " + corner.distance.toFixed(1).replace(".", ",") + " m"));
+          var closest = nearestPathPoint(corner.point, idealPaths[corner.segment] || idealLapPath);
+          var idealMarker = closest && svgPosition(closest.point);
+          if (idealMarker) {
+            elements.idealMap.appendChild(createSvgElement("line", { x1: marker[0].toFixed(1), y1: marker[1].toFixed(1), x2: idealMarker[0].toFixed(1), y2: idealMarker[1].toFixed(1), stroke: "#ff5964", "stroke-width": "4", "stroke-linecap": "round" }));
+            elements.idealMap.appendChild(createSvgElement("circle", { cx: idealMarker[0].toFixed(1), cy: idealMarker[1].toFixed(1), r: "7", fill: "var(--primary)", stroke: "black", "stroke-width": "2" }));
+          }
+          elements.idealMap.appendChild(createSvgElement("circle", { cx: marker[0].toFixed(1), cy: marker[1].toFixed(1), r: "7", fill: "var(--viz-series-2)", stroke: "white", "stroke-width": "2" }));
+          elements.idealMap.appendChild(createSvgElement("text", { x: (marker[0] + 14).toFixed(1), y: (marker[1] - 12).toFixed(1), fill: "white", "font-size": "15", "font-weight": "900", stroke: "black", "stroke-width": "3", "paint-order": "stroke" }, "Z" + (corner.segment + 1) + " · " + corner.distance.toFixed(1).replace(".", ",") + " m"));
         });
-        var potential = Math.max(0, profile.bestLapMs - profile.theoreticalMs);
-        elements.idealPotential.innerHTML = "Potenciál proti nejrychlejšímu reálnému kolu: <strong>−" + formatLapTime(potential) + " s</strong>. Virtuální ideál je složený z reálně projetých úseků, není to celé skutečně zajeté kolo.";
+        var potential = Math.max(0, comparisonMs - profile.theoreticalMs);
+        elements.idealPotential.innerHTML = "Potenciál proti nejrychlejšímu kolu aktuálního tréninku: <strong>−" + formatLapTime(potential) + " s</strong>. Virtuální ideál je složený z nejrychlejšího reálného průjezdu každé rozpoznané zatáčky; vítězný průjezd může pocházet z libovolného kola stejné konfigurace.";
         elements.idealSummary.innerHTML = "";
         var visibleCorners = teachingCorners.filter(function (corner) { return corner.distance >= 1.0 && corner.distance <= 4.0; });
         visibleCorners.forEach(function (corner, index) {
-          var windowStart = Math.max(0, corner.fraction - .045);
-          var windowEnd = Math.min(1, corner.fraction + .045);
-          var idealWindow = sliceGpsPath(idealLapPath, windowStart * (idealLapPath.length - 1), windowEnd * (idealLapPath.length - 1));
+          var idealWindow = idealPaths[corner.segment] || [];
           var speed = idealPathSpeedSummary(idealWindow);
+          var source = profile.bestSectorSources[corner.segment];
           var card = document.createElement("div");
           card.className = "kp-ideal-coach-card";
           var speedAdvice = speed ? "Virtuální průjezd přibližně " + speed.max + " → " + speed.min + " km/h." : "Rychlost v tomto místě zatím nelze spolehlivě určit.";
-          card.innerHTML = "<strong>Zatáčka " + (index + 1) + "</strong><span>Boční rozdíl stopy přibližně " + corner.distance.toFixed(1).replace(".", ",") + " m.</span><small>" + speedAdvice + " Porovnává se nejkratší kolmá vzdálenost mezi stopami, ne časový posun po trati.</small>";
+          card.innerHTML = "<strong>Zatáčka " + (corner.segment + 1) + "</strong><span>Boční rozdíl stopy přibližně " + corner.distance.toFixed(1).replace(".", ",") + " m.</span><small>" + speedAdvice + " Nejlepší průjezd: kolo " + (source ? source.lap : "—") + " · " + (source ? (source.date || "") + " " + (source.session || "") : "") + ". Porovnává se nejkratší kolmá vzdálenost mezi stopami.</small>";
           elements.idealSummary.appendChild(card);
         });
         if (!visibleCorners.length) {
@@ -3640,7 +3721,7 @@
           card.innerHTML = "<strong>Stopa je velmi podobná</strong><span>V rozpoznaných zatáčkách není potvrzený boční rozdíl větší než 1,0 m.</span><small>Z malých odchylek nedáváme jezdecký pokyn, protože mohou být způsobené GPS.</small>";
           elements.idealSummary.appendChild(card);
         }
-        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Porovnávají se pouze data stejné konfigurace tratě. Hodnoty nad 4 m se nezobrazují jako stopa — znamenají chybu spojení sektorů nebo GPS, nikoli reálný jezdecký rozdíl.";
+        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Porovnávají se pouze data stejné konfigurace tratě. Každá zatáčka má vlastní úsek od rovnější části před nájezdem po rovnější část za výjezdem. Hodnoty nad 4 m se nezobrazují jako stopa — znamenají chybu GPS, nikoli reálný jezdecký rozdíl.";
       }
 
       function renderAlfanoChart(sortedSessions) {
