@@ -575,6 +575,14 @@
     #karting-program-app .kp-map-source { margin-left: auto; color: var(--muted-foreground); }
     #karting-program-app .kp-map-source a { color: inherit; }
     #karting-program-app .kp-map-details { color: var(--muted-foreground); }
+    #karting-program-app .kp-ideal-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    #karting-program-app .kp-ideal-coach-card { padding: 13px; border-radius: 11px; background: var(--muted); border-left: 3px solid var(--primary); }
+    #karting-program-app .kp-ideal-coach-card strong, #karting-program-app .kp-ideal-coach-card span, #karting-program-app .kp-ideal-coach-card small { display: block; }
+    #karting-program-app .kp-ideal-coach-card span { margin-top: 5px; color: var(--foreground); }
+    #karting-program-app .kp-ideal-coach-card small { margin-top: 5px; color: var(--muted-foreground); line-height: 1.35; }
+    #karting-program-app .kp-ideal-potential { padding: 12px 14px; border: 1px solid rgba(255,212,0,.45); border-radius: 11px; background: rgba(255,212,0,.08); color: var(--foreground); }
+    #karting-program-app .kp-ideal-potential strong { color: var(--primary); }
+    @media (max-width: 720px) { #karting-program-app .kp-ideal-summary { grid-template-columns: 1fr; } }
     #karting-program-app #kp-ideal-map-dialog { width: min(1180px, calc(100% - 24px)); max-height: calc(100dvh - 24px); }
     #karting-program-app #kp-ideal-map-dialog .kp-dialog-body { min-height: min(860px, calc(100dvh - 28px)); grid-template-rows: auto auto minmax(480px, 1fr) auto; }
     #karting-program-app #kp-ideal-map-dialog .kp-ideal-map { min-height: min(68dvh, 680px); }
@@ -797,7 +805,7 @@
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-records" title="Zobrazit síň rekordů"><span>Osobní rekord</span><strong id="kp-alfano-best">—</strong><small id="kp-alfano-best-note">rekord tratě</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-latest" title="Zobrazit report posledního tréninku"><span>Poslední trénink</span><strong id="kp-alfano-latest">—</strong><small id="kp-alfano-latest-note">zatím bez dat</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-consistency" title="Zobrazit časy jednotlivých kol"><span>Konzistence</span><strong id="kp-alfano-consistency">—</strong><small id="kp-alfano-consistency-note">kola do +0,5 s</small></button>
-        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-ideal-map" title="Zobrazit ideální GPS stopu"><span>Ideální kolo</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">3 GPS sektory</small></button>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-ideal-map" title="Zobrazit ideální GPS stopu"><span>Virtuální ideál</span><strong id="kp-alfano-laps">—</strong><small id="kp-alfano-laps-note">výukové porovnání</small></button>
         <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-open-mileage" title="Zobrazit přehled nájezdu"><span>Celkem kol</span><strong id="kp-alfano-total-laps">—</strong><small id="kp-alfano-total-laps-note">0 tréninků</small></button>
       </div>
       <div class="kp-alfano-chart-wrap">
@@ -896,14 +904,16 @@
     <div class="kp-dialog-body">
       <div class="kp-dialog-head">
         <div>
-          <h2>Ideální složená stopa</h2>
-          <p class="kp-dialog-copy" id="kp-ideal-map-copy">Nejrychlejší skutečně projeté sektory v porovnání s nejlepším celým kolem.</p>
+          <h2>Nejrychlejší kolo vs. virtuální ideál</h2>
+          <p class="kp-dialog-copy" id="kp-ideal-map-copy">Výukové porovnání nejlepšího skutečného kola se složenými nejrychlejšími úseky.</p>
         </div>
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
-      <div class="kp-map-legend"><span>Nejlepší celé kolo</span><span class="is-ideal">Ideální složená stopa</span><small class="kp-map-source">Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
+      <div class="kp-map-legend"><span>Nejrychlejší reálné kolo</span><span class="is-ideal">Virtuální ideál</span><small class="kp-map-source">Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
       <div class="kp-chart-empty" id="kp-ideal-map-empty">Pro zobrazení stopy nahraj Alfano ZIPy znovu.</div>
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
+      <div class="kp-ideal-potential" id="kp-ideal-potential"></div>
+      <div class="kp-ideal-summary" id="kp-ideal-summary"></div>
       <div class="kp-map-details" id="kp-ideal-map-details"></div>
     </div>
   </dialog>
@@ -1288,6 +1298,8 @@
         idealMapEmpty: root.querySelector("#kp-ideal-map-empty"),
         idealMapCopy: root.querySelector("#kp-ideal-map-copy"),
         idealMapDetails: root.querySelector("#kp-ideal-map-details"),
+        idealPotential: root.querySelector("#kp-ideal-potential"),
+        idealSummary: root.querySelector("#kp-ideal-summary"),
         alfanoTotalLaps: root.querySelector("#kp-alfano-total-laps"),
         alfanoTotalLapsNote: root.querySelector("#kp-alfano-total-laps-note"),
         openMileage: root.querySelector("#kp-open-mileage"),
@@ -3457,6 +3469,26 @@
         return element;
       }
 
+      function idealPathSpeedSummary(path) {
+        var speeds = (path || []).map(function (point) { return Number(point[2]); }).filter(function (value) { return Number.isFinite(value) && value > 0; });
+        if (speeds.length < 8) return null;
+        var onset = null;
+        for (var i = 2; i < speeds.length - 3; i += 1) {
+          var before = (speeds[i - 2] + speeds[i - 1] + speeds[i]) / 3;
+          var after = (speeds[i + 1] + speeds[i + 2] + speeds[i + 3]) / 3;
+          if (before - after >= 3) { onset = Math.round(i / Math.max(1, speeds.length - 1) * 100); break; }
+        }
+        return { max: Math.round(Math.max.apply(null, speeds)), min: Math.round(Math.min.apply(null, speeds)), slowdown: onset };
+      }
+
+      function idealPathDifference(referencePath, idealPath) {
+        if (!referencePath || !idealPath || referencePath.length < 2 || idealPath.length < 2) return null;
+        var values = [];
+        for (var i = 1; i < 10; i += 1) values.push(gpsDistance(gpsGateAtFraction(referencePath, i / 10), gpsGateAtFraction(idealPath, i / 10)));
+        var maximum = Math.max.apply(null, values);
+        return { maximum: maximum, reliable: maximum >= 1.5, fraction: (values.indexOf(maximum) + 1) / 10 };
+      }
+
       function renderIdealMap() {
         var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
         var latest = sorted[sorted.length - 1];
@@ -3467,11 +3499,13 @@
           elements.idealMap.setAttribute("hidden", "");
           elements.idealMapEmpty.removeAttribute("hidden");
           elements.idealMapDetails.textContent = latest ? "Časy jsou uložené, ale GPS stopa ještě ne. Nahraj ZIPy této tratě znovu." : "Nejdřív nahraj data z Alfana.";
+          elements.idealPotential.textContent = "";
+          elements.idealSummary.innerHTML = "";
           return;
         }
         elements.idealMap.removeAttribute("hidden");
         elements.idealMapEmpty.setAttribute("hidden", "");
-        elements.idealMapCopy.textContent = profile.track + " · ideální " + formatLapTime(profile.theoreticalMs) + " s · nejlepší celé kolo " + formatLapTime(profile.bestLapMs) + " s";
+        elements.idealMapCopy.textContent = profile.track + " · virtuální ideál " + formatLapTime(profile.theoreticalMs) + " s · nejrychlejší reálné kolo " + formatLapTime(profile.bestLapMs) + " s";
         function alignPath(path, anchors) {
           var shift = anchors.reduce(function (sum, anchor) {
             var actual = anchor.atEnd ? path[path.length - 1] : path[0];
@@ -3525,15 +3559,38 @@
           elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.6)", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }));
           elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         });
+        idealPaths.forEach(function (path, index) {
+          var startFraction = index / 3;
+          var endFraction = (index + 1) / 3;
+          var referenceSection = sliceGpsPath(profile.bestLapPath, startFraction * (profile.bestLapPath.length - 1), endFraction * (profile.bestLapPath.length - 1));
+          var difference = idealPathDifference(referenceSection, path);
+          if (!difference || !difference.reliable) return;
+          var markerPoint = gpsGateAtFraction(path, difference.fraction);
+          var marker = svgPosition(markerPoint);
+          elements.idealMap.appendChild(createSvgElement("circle", { cx: marker[0].toFixed(1), cy: marker[1].toFixed(1), r: "10", fill: "rgba(255,212,0,.22)", stroke: "var(--primary)", "stroke-width": "3" }));
+          elements.idealMap.appendChild(createSvgElement("text", { x: (marker[0] + 14).toFixed(1), y: (marker[1] - 12).toFixed(1), fill: "white", "font-size": "14", "font-weight": "800" }, "rozdíl " + difference.maximum.toFixed(1).replace(".", ",") + " m"));
+        });
         idealPaths.slice(0, 2).forEach(function (path, index) {
           var lastPoint = path[path.length - 1];
           var xy = svgPoints([lastPoint]).split(",");
           elements.idealMap.appendChild(createSvgElement("circle", { cx: xy[0], cy: xy[1], r: "8", fill: "var(--background)", stroke: "var(--primary)", "stroke-width": "4" }));
           elements.idealMap.appendChild(createSvgElement("text", { x: Number(xy[0]) + 12, y: Number(xy[1]) - 10, fill: "white", "font-size": "14", "font-weight": "800" }, "S" + (index + 1)));
         });
-        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK   |   " : "Pro tuto trať zatím není uložený letecký podklad.   |   ") + profile.bestSectorSources.map(function (source, index) {
-          return "S" + (index + 1) + ": " + formatLapTime(source.ms) + " s · trénink " + source.session + " · kolo " + source.lap;
-        }).join("   |   ");
+        var potential = Math.max(0, profile.bestLapMs - profile.theoreticalMs);
+        elements.idealPotential.innerHTML = "Potenciál proti nejrychlejšímu reálnému kolu: <strong>−" + formatLapTime(potential) + " s</strong>. Virtuální ideál je složený z reálně projetých úseků, není to celé skutečně zajeté kolo.";
+        elements.idealSummary.innerHTML = "";
+        profile.bestSectorSources.forEach(function (source, index) {
+          var referenceSection = sliceGpsPath(profile.bestLapPath, index / 3 * (profile.bestLapPath.length - 1), (index + 1) / 3 * (profile.bestLapPath.length - 1));
+          var difference = idealPathDifference(referenceSection, idealPaths[index]);
+          var speed = idealPathSpeedSummary(profile.bestSectorPaths[index]);
+          var card = document.createElement("div");
+          card.className = "kp-ideal-coach-card";
+          var lineAdvice = difference && difference.reliable ? "Největší rozdíl stopy: " + difference.maximum.toFixed(1).replace(".", ",") + " m (žlutě označeno v mapě)." : "Rozdíl stopy je pod hranicí spolehlivosti GPS; z něj nedáváme pokyn.";
+          var speedAdvice = speed ? "Rychlost " + speed.max + " → " + speed.min + " km/h" + (speed.slowdown !== null ? "; nástup zpomalování přibližně v " + speed.slowdown + " % úseku." : ".") : "Pro rychlostní rozbor chybí dost GPS vzorků.";
+          card.innerHTML = "<strong>Úsek " + (index + 1) + " · " + formatLapTime(source.ms) + " s</strong><span>" + lineAdvice + "</span><small>" + speedAdvice + " GPS odhad není měření brzdového pedálu. Zdroj: " + (source.date || "") + " " + (source.session || "") + ", kolo " + source.lap + ".</small>";
+          elements.idealSummary.appendChild(card);
+        });
+        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Porovnávají se pouze data stejné rozpoznané konfigurace tratě. Odchylky stopy pod 1,5 m jsou potlačeny jako GPS šum.";
       }
 
       function renderAlfanoChart(sortedSessions) {
