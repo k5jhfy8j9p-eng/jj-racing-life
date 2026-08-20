@@ -3383,12 +3383,26 @@
           groups[key].push(session);
         });
         Object.keys(groups).forEach(function (key) {
-          var candidates = groups[key].flatMap(function (session) {
-            return session.gpsLaps.map(function (lap) { return { session: session, lap: lap }; });
-          }).filter(function (item) {
-            if (!hasTelemetry(item.lap) || item.lap.points.length <= 100) return false;
-            var plausibleNumbers = new Set(plausibleTimedLaps(item.session).map(function (lap) { return lap.lap; }));
-            return plausibleNumbers.has(item.lap.lap);
+          var rawCandidates = groups[key].flatMap(function (session) {
+            var timedNumbers = new Set((session.laps || []).filter(function (lap) {
+              return Number.isFinite(lap.lap) && Number.isFinite(lap.ms) && lap.ms >= 8000;
+            }).map(function (lap) { return lap.lap; }));
+            return session.gpsLaps.map(function (lap) { return { session: session, lap: lap }; }).filter(function (item) {
+              return hasTelemetry(item.lap) && item.lap.points.length > 100 && timedNumbers.has(item.lap.lap);
+            });
+          });
+          if (!rawCandidates.length) return;
+          var trustedLengths = rawCandidates.filter(function (item) {
+            return telemetryLapIsAnalyzable(item.session, item.lap);
+          }).map(function (item) { return gpsPathDistance(item.lap.points); }).filter(function (length) {
+            return Number.isFinite(length) && length > 100;
+          });
+          var typicalLength = median(trustedLengths.length ? trustedLengths : rawCandidates.map(function (item) {
+            return gpsPathDistance(item.lap.points);
+          }));
+          var candidates = rawCandidates.filter(function (item) {
+            var length = gpsPathDistance(item.lap.points);
+            return Number.isFinite(typicalLength) && typicalLength > 100 && Math.abs(length - typicalLength) / typicalLength <= .08;
           });
           if (!candidates.length) return;
           var reference = candidates.reduce(function (best, item) { return item.lap.ms < best.lap.ms ? item : best; }, candidates[0]);
