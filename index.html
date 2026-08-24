@@ -566,7 +566,9 @@
     #karting-program-app .kp-ideal-trigger { appearance: none; border: 1px solid transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
     #karting-program-app .kp-ideal-trigger:hover,
     #karting-program-app .kp-ideal-trigger:focus-visible { border-color: var(--primary); box-shadow: 0 0 18px rgba(255, 212, 0, .16); outline: none; }
-    #karting-program-app .kp-ideal-map { width: 100%; min-height: 360px; border: 1px solid var(--border); border-radius: 14px; background: radial-gradient(circle at 50% 45%, #16283a, #080d14 72%); }
+    #karting-program-app .kp-ideal-map { width: 100%; min-height: 360px; border: 1px solid var(--border); border-radius: 14px; background: radial-gradient(circle at 50% 45%, #16283a, #080d14 72%); cursor: grab; touch-action: none; user-select: none; }
+    #karting-program-app .kp-ideal-map.is-dragging { cursor: grabbing; }
+    #karting-program-app .kp-ideal-map.is-zoomed .kp-map-annotation { display: none; }
     #karting-program-app .kp-ideal-map[hidden],
     #karting-program-app #kp-ideal-map-empty[hidden] { display: none !important; }
     #karting-program-app .kp-map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; color: var(--muted-foreground); }
@@ -575,6 +577,10 @@
     #karting-program-app .kp-map-mode { display: inline-flex; gap: 6px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); }
     #karting-program-app .kp-map-mode button { padding: 7px 11px; border: 0; border-radius: 7px; background: transparent; color: var(--muted-foreground); font: inherit; font-weight: 750; cursor: pointer; }
     #karting-program-app .kp-map-mode button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); }
+    #karting-program-app .kp-map-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #karting-program-app .kp-map-zoom { display: inline-flex; gap: 5px; margin-left: auto; }
+    #karting-program-app .kp-map-zoom button { min-width: 40px; padding: 7px 10px; }
+    #karting-program-app .kp-map-zoom-hint { color: var(--muted-foreground); font-size: .82rem; }
     #karting-program-app .kp-map-source { margin-left: auto; color: var(--muted-foreground); }
     #karting-program-app .kp-map-source a { color: inherit; }
     #karting-program-app .kp-map-details { color: var(--muted-foreground); }
@@ -924,7 +930,11 @@
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
       <div class="kp-map-legend"><span>Modrá · nejrychlejší kolo aktuálního tréninku</span><span class="is-ideal">Žlutá · virtuální ideál</span><small class="kp-map-source" id="kp-map-source" hidden>Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
-      <div class="kp-map-mode" aria-label="Podklad porovnání stop"><button type="button" id="kp-map-mode-clean" aria-pressed="true">Čisté stopy</button><button type="button" id="kp-map-mode-aerial" aria-pressed="false">Letecká mapa</button></div>
+      <div class="kp-map-toolbar">
+        <div class="kp-map-mode" aria-label="Podklad porovnání stop"><button type="button" id="kp-map-mode-clean" aria-pressed="true">Čisté stopy</button><button type="button" id="kp-map-mode-aerial" aria-pressed="false">Letecká mapa</button></div>
+        <span class="kp-map-zoom-hint">Přibliž kolečkem nebo tlačítky, mapu posuň tažením.</span>
+        <div class="kp-map-zoom" aria-label="Přiblížení mapy"><button type="button" class="btn btn-ghost" id="kp-map-zoom-out" aria-label="Oddálit">−</button><button type="button" class="btn btn-ghost" id="kp-map-zoom-in" aria-label="Přiblížit">+</button><button type="button" class="btn btn-ghost" id="kp-map-zoom-reset">Celá trať</button></div>
+      </div>
       <div class="kp-chart-empty" id="kp-ideal-map-empty">Pro zobrazení stopy nahraj Alfano ZIPy znovu.</div>
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
       <div class="kp-ideal-potential" id="kp-ideal-potential"></div>
@@ -1318,6 +1328,9 @@
         idealMapModeClean: root.querySelector("#kp-map-mode-clean"),
         idealMapModeAerial: root.querySelector("#kp-map-mode-aerial"),
         idealMapSource: root.querySelector("#kp-map-source"),
+        idealMapZoomOut: root.querySelector("#kp-map-zoom-out"),
+        idealMapZoomIn: root.querySelector("#kp-map-zoom-in"),
+        idealMapZoomReset: root.querySelector("#kp-map-zoom-reset"),
         idealPotential: root.querySelector("#kp-ideal-potential"),
         idealSummary: root.querySelector("#kp-ideal-summary"),
         cornerVisuals: root.querySelector("#kp-corner-visuals"),
@@ -3448,6 +3461,9 @@
             return item.lap.points.filter(function (point, index) { return index % 4 === 0 || index === item.lap.points.length - 1; });
           });
           candidates.forEach(function (item) {
+            // Odstraníme pouze společný posun celého GPS kola. Boční tvar jednotlivých
+            // průjezdů se nesmí centrovat po sektorech, jinak by se skutečný rozdíl stopy ztratil.
+            var alignedLapPoints = alignLapBySamples(item.lap.points, reference.lap.points);
             var samples = boundaries.map(function (fraction) { return telemetrySampleAtFraction(item.lap, fraction); });
             if (samples.some(function (sample) { return !sample; })) return;
             var sectors = [];
@@ -3456,7 +3472,7 @@
               var duration = samples[index + 1].elapsed - samples[index].elapsed;
               if (!Number.isFinite(duration) || duration <= 0) return;
               sectors.push(duration);
-              paths.push(sliceGpsPath(item.lap.points, samples[index].index, samples[index + 1].index));
+              paths.push(sliceGpsPath(alignedLapPoints, samples[index].index, samples[index + 1].index));
             }
             item.session.virtualSectors.push({ lap: item.lap.lap, sectors: sectors.map(Math.round) });
             sectors.forEach(function (duration, index) {
@@ -3474,7 +3490,7 @@
             });
             if (!Number.isFinite(profile.bestLapMs) || item.lap.ms < profile.bestLapMs) {
               profile.bestLapMs = item.lap.ms;
-              profile.bestLapPath = item.lap.points;
+              profile.bestLapPath = alignLapBySamples(item.lap.points, reference.lap.points);
               profile.bestLapSource = { session: item.session.time || "", date: item.session.date || "", lap: item.lap.lap };
             }
           });
@@ -3708,6 +3724,32 @@
       }
 
       var idealMapMode = "clean";
+      var idealMapViewport = null;
+      var idealMapDrag = null;
+
+      function applyIdealMapViewport(view) {
+        if (!view || !elements.idealMap) return;
+        idealMapViewport.current = view;
+        elements.idealMap.setAttribute("viewBox", view.map(function (value) { return value.toFixed(2); }).join(" "));
+        elements.idealMap.classList.toggle("is-zoomed", view[2] < idealMapViewport.base[2] * .72);
+      }
+
+      function zoomIdealMap(factor, center) {
+        if (!idealMapViewport) return;
+        var view = idealMapViewport.current.slice();
+        var minimumWidth = idealMapViewport.base[2] / 12;
+        var maximumWidth = idealMapViewport.base[2];
+        var nextWidth = Math.max(minimumWidth, Math.min(maximumWidth, view[2] * factor));
+        var ratio = nextWidth / view[2];
+        var nextHeight = view[3] * ratio;
+        center = center || [view[0] + view[2] / 2, view[1] + view[3] / 2];
+        applyIdealMapViewport([
+          center[0] - (center[0] - view[0]) * ratio,
+          center[1] - (center[1] - view[1]) * ratio,
+          nextWidth,
+          nextHeight
+        ]);
+      }
 
       function renderIdealMap() {
         var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
@@ -3733,36 +3775,13 @@
         elements.idealMap.removeAttribute("hidden");
         elements.idealMapEmpty.setAttribute("hidden", "");
         elements.idealMapCopy.textContent = profile.track + " · virtuální ideál " + formatLapTime(profile.theoreticalMs) + " s · nejrychlejší kolo aktuálního tréninku " + formatLapTime(comparisonMs) + " s";
-        function alignPath(path, anchors) {
-          var shift = anchors.reduce(function (sum, anchor) {
-            var actual = anchor.atEnd ? path[path.length - 1] : path[0];
-            sum[0] += anchor.point[0] - actual[0];
-            sum[1] += anchor.point[1] - actual[1];
-            return sum;
-          }, [0, 0]);
-          shift[0] /= anchors.length;
-          shift[1] /= anchors.length;
-          return path.map(function (point) {
-            var aligned = point.slice();
-            aligned[0] = point[0] + shift[0];
-            aligned[1] = point[1] + shift[1];
-            return aligned;
-          });
-        }
-        comparisonPath = smoothGpsPath(alignLapBySamples(comparisonPath, profile.bestLapPath), 2);
+        comparisonPath = smoothGpsPath(alignLapBySamples(comparisonPath, profile.bestLapPath), 1);
         var idealPaths = profile.bestSectorPaths.map(function (path, index) {
-          var anchors = [];
-          if (index > 0) anchors.push({ point: profile.gates[index - 1], atEnd: false });
-          if (index < profile.bestSectorPaths.length - 1) anchors.push({ point: profile.gates[index], atEnd: true });
-          return smoothGpsPath(anchors.length ? alignPath(path, anchors) : path, 2);
+          return smoothGpsPath(path, 1);
         });
         var currentSamples = profile.boundaries.map(function (fraction) { return telemetrySampleAtFraction(currentBestGpsLap, fraction); });
         var currentCornerPaths = currentSamples.slice(0, -1).map(function (sample, index) {
-          var path = sliceGpsPath(comparisonPath, sample.index, currentSamples[index + 1].index);
-          var anchors = [];
-          if (index > 0) anchors.push({ point: profile.gates[index - 1], atEnd: false });
-          if (index < currentSamples.length - 2) anchors.push({ point: profile.gates[index], atEnd: true });
-          return smoothGpsPath(anchors.length ? alignPath(path, anchors) : path, 2);
+          return sliceGpsPath(comparisonPath, sample.index, currentSamples[index + 1].index);
         });
         elements.idealMapModeClean.setAttribute("aria-pressed", String(idealMapMode === "clean"));
         elements.idealMapModeAerial.setAttribute("aria-pressed", String(idealMapMode === "aerial"));
@@ -3778,7 +3797,8 @@
           background = automaticAerialBackground(allPoints, width, height);
           padding = background ? 0 : padding;
         }
-        elements.idealMap.setAttribute("viewBox", "0 0 " + width + " " + height);
+        idealMapViewport = { base: [0, 0, width, height], current: [0, 0, width, height] };
+        applyIdealMapViewport(idealMapViewport.current);
         var centerLatitude = allPoints.reduce(function (sum, point) { return sum + point[0]; }, 0) / allPoints.length;
         var longitudeScale = Math.cos(centerLatitude * Math.PI / 180);
         var minLon = background ? background.minLon : Math.min.apply(null, allPoints.map(function (point) { return point[1] * longitudeScale; }));
@@ -3815,13 +3835,13 @@
         }
         elements.idealMap.appendChild(createSvgElement("rect", { x: "0", y: "0", width: width, height: height, fill: background ? "rgba(3,8,13,.16)" : "#09111a" }));
         if (!background) {
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "#344352", "stroke-width": "42", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: ".78" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "#344352", "stroke-width": "30", "stroke-linecap": "round", "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke", opacity: ".72" }));
         }
-        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "rgba(0,0,0,.82)", "stroke-width": "15", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "10", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "rgba(0,0,0,.88)", "stroke-width": "7", "stroke-linecap": "round", "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" }));
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "3.5", "stroke-linecap": "round", "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" }));
         idealPaths.forEach(function (path) {
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.82)", "stroke-width": "11", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "6", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.88)", "stroke-width": "7", "stroke-linecap": "round", "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "3.5", "stroke-linecap": "round", "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" }));
         });
         var idealLapPath = idealPaths.reduce(function (all, path, index) { return all.concat(index ? path.slice(1) : path); }, []);
         var teachingCorners = (profile.cornerFractions || []).map(function (fraction, index) {
@@ -3834,11 +3854,11 @@
           var closest = nearestPathPoint(corner.point, idealPaths[corner.segment] || idealLapPath);
           var idealMarker = closest && svgPosition(closest.point);
           if (idealMarker) {
-            elements.idealMap.appendChild(createSvgElement("line", { x1: marker[0].toFixed(1), y1: marker[1].toFixed(1), x2: idealMarker[0].toFixed(1), y2: idealMarker[1].toFixed(1), stroke: "#ff5964", "stroke-width": "4", "stroke-linecap": "round" }));
-            elements.idealMap.appendChild(createSvgElement("circle", { cx: idealMarker[0].toFixed(1), cy: idealMarker[1].toFixed(1), r: "7", fill: "var(--primary)", stroke: "black", "stroke-width": "2" }));
+            elements.idealMap.appendChild(createSvgElement("line", { class: "kp-map-annotation", x1: marker[0].toFixed(1), y1: marker[1].toFixed(1), x2: idealMarker[0].toFixed(1), y2: idealMarker[1].toFixed(1), stroke: "#ff5964", "stroke-width": "4", "stroke-linecap": "round" }));
+            elements.idealMap.appendChild(createSvgElement("circle", { class: "kp-map-annotation", cx: idealMarker[0].toFixed(1), cy: idealMarker[1].toFixed(1), r: "7", fill: "var(--primary)", stroke: "black", "stroke-width": "2" }));
           }
-          elements.idealMap.appendChild(createSvgElement("circle", { cx: marker[0].toFixed(1), cy: marker[1].toFixed(1), r: "7", fill: "var(--viz-series-2)", stroke: "white", "stroke-width": "2" }));
-          elements.idealMap.appendChild(createSvgElement("text", { x: (marker[0] + 14).toFixed(1), y: (marker[1] - 12).toFixed(1), fill: "white", "font-size": "15", "font-weight": "900", stroke: "black", "stroke-width": "3", "paint-order": "stroke" }, "Z" + (corner.segment + 1) + " · " + corner.distance.toFixed(1).replace(".", ",") + " m"));
+          elements.idealMap.appendChild(createSvgElement("circle", { class: "kp-map-annotation", cx: marker[0].toFixed(1), cy: marker[1].toFixed(1), r: "7", fill: "var(--viz-series-2)", stroke: "white", "stroke-width": "2" }));
+          elements.idealMap.appendChild(createSvgElement("text", { class: "kp-map-annotation", x: (marker[0] + 14).toFixed(1), y: (marker[1] - 12).toFixed(1), fill: "white", "font-size": "15", "font-weight": "900", stroke: "black", "stroke-width": "3", "paint-order": "stroke" }, "Z" + (corner.segment + 1) + " · " + corner.distance.toFixed(1).replace(".", ",") + " m"));
         });
         var potential = Math.max(0, comparisonMs - profile.theoreticalMs);
         elements.idealPotential.innerHTML = "Potenciál proti nejrychlejšímu kolu aktuálního tréninku: <strong>−" + formatLapTime(potential) + " s</strong>. Virtuální ideál je složený z nejrychlejšího reálného průjezdu každé rozpoznané zatáčky; vítězný průjezd může pocházet z libovolného kola stejné konfigurace.";
@@ -4534,6 +4554,43 @@
       });
       elements.idealMapModeClean.addEventListener("click", function () { idealMapMode = "clean"; renderIdealMap(); });
       elements.idealMapModeAerial.addEventListener("click", function () { idealMapMode = "aerial"; renderIdealMap(); });
+      elements.idealMapZoomIn.addEventListener("click", function () { zoomIdealMap(.62); });
+      elements.idealMapZoomOut.addEventListener("click", function () { zoomIdealMap(1.6); });
+      elements.idealMapZoomReset.addEventListener("click", function () {
+        if (idealMapViewport) applyIdealMapViewport(idealMapViewport.base.slice());
+      });
+      elements.idealMap.addEventListener("wheel", function (event) {
+        if (!idealMapViewport) return;
+        event.preventDefault();
+        var rect = elements.idealMap.getBoundingClientRect(), view = idealMapViewport.current;
+        var center = [
+          view[0] + (event.clientX - rect.left) / Math.max(1, rect.width) * view[2],
+          view[1] + (event.clientY - rect.top) / Math.max(1, rect.height) * view[3]
+        ];
+        zoomIdealMap(event.deltaY < 0 ? .78 : 1.28, center);
+      }, { passive: false });
+      elements.idealMap.addEventListener("pointerdown", function (event) {
+        if (!idealMapViewport || event.button > 0) return;
+        idealMapDrag = { x: event.clientX, y: event.clientY, view: idealMapViewport.current.slice() };
+        elements.idealMap.classList.add("is-dragging");
+        elements.idealMap.setPointerCapture(event.pointerId);
+      });
+      elements.idealMap.addEventListener("pointermove", function (event) {
+        if (!idealMapDrag || !idealMapViewport) return;
+        var rect = elements.idealMap.getBoundingClientRect();
+        applyIdealMapViewport([
+          idealMapDrag.view[0] - (event.clientX - idealMapDrag.x) / Math.max(1, rect.width) * idealMapDrag.view[2],
+          idealMapDrag.view[1] - (event.clientY - idealMapDrag.y) / Math.max(1, rect.height) * idealMapDrag.view[3],
+          idealMapDrag.view[2],
+          idealMapDrag.view[3]
+        ]);
+      });
+      function finishIdealMapDrag() {
+        idealMapDrag = null;
+        elements.idealMap.classList.remove("is-dragging");
+      }
+      elements.idealMap.addEventListener("pointerup", finishIdealMapDrag);
+      elements.idealMap.addEventListener("pointercancel", finishIdealMapDrag);
       elements.openConsistency.addEventListener("click", function () {
         renderConsistencyDetail();
         if (typeof elements.consistencyDialog.showModal === "function") elements.consistencyDialog.showModal();
