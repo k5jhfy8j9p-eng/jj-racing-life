@@ -570,8 +570,11 @@
     #karting-program-app .kp-ideal-map[hidden],
     #karting-program-app #kp-ideal-map-empty[hidden] { display: none !important; }
     #karting-program-app .kp-map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; color: var(--muted-foreground); }
-    #karting-program-app .kp-map-legend span::before { content: ""; display: inline-block; width: 22px; height: 4px; margin-right: 7px; vertical-align: middle; border-radius: 4px; background: var(--viz-series-2); }
+    #karting-program-app .kp-map-legend span::before { content: ""; display: inline-block; width: 28px; height: 7px; margin-right: 7px; vertical-align: middle; border: 2px solid rgba(0,0,0,.72); border-radius: 5px; background: var(--viz-series-2); }
     #karting-program-app .kp-map-legend .is-ideal::before { background: var(--primary); }
+    #karting-program-app .kp-map-mode { display: inline-flex; gap: 6px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); }
+    #karting-program-app .kp-map-mode button { padding: 7px 11px; border: 0; border-radius: 7px; background: transparent; color: var(--muted-foreground); font: inherit; font-weight: 750; cursor: pointer; }
+    #karting-program-app .kp-map-mode button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); }
     #karting-program-app .kp-map-source { margin-left: auto; color: var(--muted-foreground); }
     #karting-program-app .kp-map-source a { color: inherit; }
     #karting-program-app .kp-map-details { color: var(--muted-foreground); }
@@ -920,7 +923,8 @@
         </div>
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
-      <div class="kp-map-legend"><span>Nejrychlejší kolo aktuálního tréninku</span><span class="is-ideal">Virtuální ideál</span><small class="kp-map-source">Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
+      <div class="kp-map-legend"><span>Modrá · nejrychlejší kolo aktuálního tréninku</span><span class="is-ideal">Žlutá · virtuální ideál</span><small class="kp-map-source" id="kp-map-source" hidden>Ortofoto © <a href="https://geoportal.cuzk.cz/" target="_blank" rel="noopener">ČÚZK</a></small></div>
+      <div class="kp-map-mode" aria-label="Podklad porovnání stop"><button type="button" id="kp-map-mode-clean" aria-pressed="true">Čisté stopy</button><button type="button" id="kp-map-mode-aerial" aria-pressed="false">Letecká mapa</button></div>
       <div class="kp-chart-empty" id="kp-ideal-map-empty">Pro zobrazení stopy nahraj Alfano ZIPy znovu.</div>
       <svg class="kp-ideal-map" id="kp-ideal-map" viewBox="0 0 760 420" role="img" aria-label="Porovnání nejlepšího kola a ideální složené GPS stopy" hidden></svg>
       <div class="kp-ideal-potential" id="kp-ideal-potential"></div>
@@ -1311,6 +1315,9 @@
         idealMapEmpty: root.querySelector("#kp-ideal-map-empty"),
         idealMapCopy: root.querySelector("#kp-ideal-map-copy"),
         idealMapDetails: root.querySelector("#kp-ideal-map-details"),
+        idealMapModeClean: root.querySelector("#kp-map-mode-clean"),
+        idealMapModeAerial: root.querySelector("#kp-map-mode-aerial"),
+        idealMapSource: root.querySelector("#kp-map-source"),
         idealPotential: root.querySelector("#kp-ideal-potential"),
         idealSummary: root.querySelector("#kp-ideal-summary"),
         cornerVisuals: root.querySelector("#kp-corner-visuals"),
@@ -3309,8 +3316,7 @@
         var forceYIndex = headers.indexOf("Gf. Y");
         var headingIndex = headers.indexOf("Orientation");
         if (latIndex < 0 || lonIndex < 0) return [];
-        return lines.slice(1).map(function (line, index) {
-          if (index % 3 !== 0 && index !== lines.length - 2) return null;
+        return lines.slice(1).map(function (line) {
           var columns = line.split(",");
           var lat = Number(columns[latIndex]);
           var lon = Number(columns[lonIndex]);
@@ -3515,6 +3521,7 @@
           var points = parseAlfanoGpsLap(fflate.strFromU8(entries[name]));
           if (points.length > 100) session.gpsLaps.push({ lap: lapNumber, ms: summaryLap.ms, points: points });
         });
+        session.gpsSampleStep = 1;
         return normalizeAlfanoSession(session);
       }
 
@@ -3700,6 +3707,8 @@
         });
       }
 
+      var idealMapMode = "clean";
+
       function renderIdealMap() {
         var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
         var latest = sorted[sorted.length - 1];
@@ -3755,25 +3764,43 @@
           if (index < currentSamples.length - 2) anchors.push({ point: profile.gates[index], atEnd: true });
           return smoothGpsPath(anchors.length ? alignPath(path, anchors) : path, 2);
         });
-        var background = trackMapBackground(profile.track);
+        elements.idealMapModeClean.setAttribute("aria-pressed", String(idealMapMode === "clean"));
+        elements.idealMapModeAerial.setAttribute("aria-pressed", String(idealMapMode === "aerial"));
+        elements.idealMapSource.hidden = idealMapMode !== "aerial";
+        var background = idealMapMode === "aerial" ? trackMapBackground(profile.track) : null;
         if (background && (trackRecordKey(profile.track).indexOf("STEEL") !== -1 || trackRecordKey(profile.track).indexOf("TŘINEC") !== -1 || trackRecordKey(profile.track).indexOf("TRINEC") !== -1)) {
           background.minLat = 49.6887052727;
           background.maxLat = 49.6941947273;
         }
         var allPoints = [comparisonPath].concat(idealPaths).flat();
         var width = 1100, height = 888, padding = background ? 0 : 28;
-        if (!background) {
+        if (!background && idealMapMode === "aerial") {
           background = automaticAerialBackground(allPoints, width, height);
           padding = background ? 0 : padding;
         }
         elements.idealMap.setAttribute("viewBox", "0 0 " + width + " " + height);
-        var minLon = background ? background.minLon : Math.min.apply(null, allPoints.map(function (point) { return point[1]; }));
-        var maxLon = background ? background.maxLon : Math.max.apply(null, allPoints.map(function (point) { return point[1]; }));
+        var centerLatitude = allPoints.reduce(function (sum, point) { return sum + point[0]; }, 0) / allPoints.length;
+        var longitudeScale = Math.cos(centerLatitude * Math.PI / 180);
+        var minLon = background ? background.minLon : Math.min.apply(null, allPoints.map(function (point) { return point[1] * longitudeScale; }));
+        var maxLon = background ? background.maxLon : Math.max.apply(null, allPoints.map(function (point) { return point[1] * longitudeScale; }));
         var minLat = background ? background.minLat : Math.min.apply(null, allPoints.map(function (point) { return point[0]; }));
         var maxLat = background ? background.maxLat : Math.max.apply(null, allPoints.map(function (point) { return point[0]; }));
+        if (!background) {
+          var dataWidth = Math.max(.000001, maxLon - minLon), dataHeight = Math.max(.000001, maxLat - minLat);
+          var viewAspect = (width - padding * 2) / (height - padding * 2);
+          var dataAspect = dataWidth / dataHeight;
+          if (dataAspect > viewAspect) {
+            var expandedHeight = dataWidth / viewAspect, centerLat = (minLat + maxLat) / 2;
+            minLat = centerLat - expandedHeight / 2; maxLat = centerLat + expandedHeight / 2;
+          } else {
+            var expandedWidth = dataHeight * viewAspect, centerLon = (minLon + maxLon) / 2;
+            minLon = centerLon - expandedWidth / 2; maxLon = centerLon + expandedWidth / 2;
+          }
+        }
         function svgPosition(point) {
+          var longitude = background ? point[1] : point[1] * longitudeScale;
           return [
-            padding + (point[1] - minLon) / Math.max(.000001, maxLon - minLon) * (width - padding * 2),
+            padding + (longitude - minLon) / Math.max(.000001, maxLon - minLon) * (width - padding * 2),
             padding + (maxLat - point[0]) / Math.max(.000001, maxLat - minLat) * (height - padding * 2)
           ];
         }
@@ -3786,11 +3813,15 @@
         if (background) {
           elements.idealMap.appendChild(createSvgElement("image", { href: background.src, x: "0", y: "0", width: width, height: height, preserveAspectRatio: "none" }));
         }
-        elements.idealMap.appendChild(createSvgElement("rect", { x: "0", y: "0", width: width, height: height, fill: background ? "rgba(3,8,13,.14)" : "rgba(3,8,13,.24)" }));
-        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "4", "stroke-dasharray": "10 7", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        elements.idealMap.appendChild(createSvgElement("rect", { x: "0", y: "0", width: width, height: height, fill: background ? "rgba(3,8,13,.16)" : "#09111a" }));
+        if (!background) {
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(profile.bestLapPath), fill: "none", stroke: "#344352", "stroke-width": "42", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: ".78" }));
+        }
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "rgba(0,0,0,.82)", "stroke-width": "15", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(comparisonPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "10", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         idealPaths.forEach(function (path) {
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.72)", "stroke-width": "8", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "4", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "rgba(0,0,0,.82)", "stroke-width": "11", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+          elements.idealMap.appendChild(createSvgElement("polyline", { points: svgPoints(path), fill: "none", stroke: "var(--primary)", "stroke-width": "6", "stroke-linecap": "round", "stroke-linejoin": "round" }));
         });
         var idealLapPath = idealPaths.reduce(function (all, path, index) { return all.concat(index ? path.slice(1) : path); }, []);
         var teachingCorners = (profile.cornerFractions || []).map(function (fraction, index) {
@@ -3984,7 +4015,8 @@
           }).sort(function (first, second) { return second.gain - first.gain; })[0] || cornerAnalyses.slice().sort(function (first, second) { return second.gain - first.gain; })[0];
           renderCoachCorner(priority.index);
         }
-        elements.idealMapDetails.textContent = (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "") + "Modrá je nejrychlejší kolo aktuálního tréninku, žlutá nejlepší známý průjezd dané zatáčky. Metry se zobrazují jen při shodě směru alespoň ve třech kolech a jako rozsah, nikoli maximum. Body zpomalování jsou odhad z GPS rychlosti, podélného zpomalení a podpůrně z otáček; nejde o snímač brzdy.";
+        var resolutionNote = latest.gpsSampleStep === 1 ? "Stopa používá všechny GPS vzorky z Alfano ZIPu. " : "Pro plné GPS rozlišení nahraj ZIP tohoto tréninku znovu. ";
+        elements.idealMapDetails.textContent = resolutionNote + (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "Čisté zobrazení zvýrazňuje pouze skutečné rozdíly obou GPS stop. ") + "Modrá je nejrychlejší kolo aktuálního tréninku, žlutá nejlepší známý průjezd dané zatáčky. Metry se zobrazují jen při shodě směru alespoň ve třech kolech a jako rozsah, nikoli maximum. Body zpomalování jsou odhad z GPS rychlosti, podélného zpomalení a podpůrně z otáček; nejde o snímač brzdy.";
       }
 
       function renderAlfanoChart(sortedSessions) {
@@ -4126,7 +4158,7 @@
           rebuildTelemetryAnalytics(alfanoSessions);
           await saveAlfanoSessions();
           renderAlfano();
-          elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink" : imported.length < 5 ? " tréninky" : " tréninků") + " včetně GPS sektorů.";
+          elements.alfanoMessage.textContent = "Načteno: " + imported.length + (imported.length === 1 ? " trénink" : imported.length < 5 ? " tréninky" : " tréninků") + " včetně GPS stop v plném rozlišení.";
           elements.alfanoFiles.value = "";
         } catch (error) {
           elements.alfanoMessage.textContent = error && error.message ? error.message : "ZIP se nepodařilo načíst.";
@@ -4500,6 +4532,8 @@
         renderIdealMap();
         if (typeof elements.idealMapDialog.showModal === "function") elements.idealMapDialog.showModal();
       });
+      elements.idealMapModeClean.addEventListener("click", function () { idealMapMode = "clean"; renderIdealMap(); });
+      elements.idealMapModeAerial.addEventListener("click", function () { idealMapMode = "aerial"; renderIdealMap(); });
       elements.openConsistency.addEventListener("click", function () {
         renderConsistencyDetail();
         if (typeof elements.consistencyDialog.showModal === "function") elements.consistencyDialog.showModal();
