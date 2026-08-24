@@ -597,6 +597,13 @@
     #karting-program-app .kp-corner-visual h3 { margin: 0 0 10px; font-size: clamp(1.15rem, 2vw, 1.55rem); }
     #karting-program-app .kp-corner-visual svg { display: block; width: 100%; min-height: 420px; max-height: 66dvh; border-radius: 11px; background: radial-gradient(circle at 50% 50%, #172534, #070b11 72%); }
     #karting-program-app .kp-corner-visual p { margin: 10px 0 0; color: var(--foreground); font-size: clamp(.98rem, 1.5vw, 1.18rem); line-height: 1.45; }
+    #karting-program-app .kp-corner-speed-table { width: 100%; margin-top: 12px; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; font-variant-numeric: tabular-nums; }
+    #karting-program-app .kp-corner-speed-table th, #karting-program-app .kp-corner-speed-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; }
+    #karting-program-app .kp-corner-speed-table th:first-child, #karting-program-app .kp-corner-speed-table td:first-child { text-align: left; }
+    #karting-program-app .kp-corner-speed-table tr:last-child td { border-bottom: 0; }
+    #karting-program-app .kp-corner-speed-table thead th { color: var(--muted-foreground); background: var(--muted); font-size: .82rem; }
+    #karting-program-app .kp-corner-speed-table .is-actual { color: var(--viz-series-2); }
+    #karting-program-app .kp-corner-speed-table .is-ideal { color: var(--primary); }
     #karting-program-app .kp-coach-task { margin-top: 10px; padding: 12px 14px; border-radius: 10px; border-left: 4px solid var(--primary); background: rgba(255,212,0,.09); font-weight: 750; }
     #karting-program-app .kp-corner-key { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-bottom: 8px; color: var(--muted-foreground); font-size: .82rem; }
     #karting-program-app .kp-corner-key b::before { content: ""; display: inline-block; width: 18px; height: 4px; margin-right: 5px; border-radius: 3px; background: var(--viz-series-2); vertical-align: middle; }
@@ -3565,6 +3572,28 @@
         return { max: Math.round(Math.max.apply(null, speeds)), min: Math.round(Math.min.apply(null, speeds)), slowdown: onset };
       }
 
+      function gpsPathWindow(path, startFraction, endFraction) {
+        if (!Array.isArray(path) || path.length < 2) return path || [];
+        var lap = { points: path, ms: 1 };
+        var start = telemetrySampleAtFraction(lap, Math.max(0, Math.min(1, startFraction)));
+        var end = telemetrySampleAtFraction(lap, Math.max(0, Math.min(1, endFraction)));
+        return start && end ? sliceGpsPath(path, start.index, end.index) : path;
+      }
+
+      function cornerSpeedSnapshot(path, focusStart, focusEnd) {
+        var window = gpsPathWindow(path, focusStart, focusEnd);
+        var speeds = window.map(function (point) { return Number(point[2]); }).filter(function (speed) { return Number.isFinite(speed) && speed > 0; });
+        function at(fraction) {
+          var sample = telemetrySampleAtFraction({ points: path, ms: 1 }, fraction);
+          return sample && Number(sample.speed);
+        }
+        return {
+          entry: at(focusStart),
+          minimum: speeds.length ? Math.min.apply(null, speeds) : NaN,
+          exit: at(focusEnd)
+        };
+      }
+
       function nearestPathPoint(point, path) {
         if (!point || !path || path.length < 2) return null;
         var latitude = point[0] * Math.PI / 180;
@@ -3951,7 +3980,11 @@
               button.setAttribute("aria-selected", String(Number(button.dataset.corner) === analysis.index));
             });
             focus.innerHTML = "";
-            var index = analysis.index, actualPath = analysis.actualPath, idealPath = analysis.idealPath, detail = analysis.detail;
+            var index = analysis.index, actualFullPath = analysis.actualPath, idealFullPath = analysis.idealPath, detail = analysis.detail;
+            var apexFraction = (profile.cornerFractions[index] - profile.boundaries[index]) / Math.max(.001, profile.boundaries[index + 1] - profile.boundaries[index]);
+            var focusStart = Math.max(0, apexFraction - .34), focusEnd = Math.min(1, apexFraction + .34);
+            var actualPath = gpsPathWindow(actualFullPath, focusStart, focusEnd), idealPath = gpsPathWindow(idealFullPath, focusStart, focusEnd);
+            var actualSpeed = cornerSpeedSnapshot(actualFullPath, focusStart, focusEnd), idealSpeed = cornerSpeedSnapshot(idealFullPath, focusStart, focusEnd);
             var title = document.createElement("h3");
             title.textContent = "Zatáčka " + (index + 1) + " · zde lze získat přibližně " + formatLapTime(analysis.gain) + " s";
             var svg = createSvgElement("svg", { viewBox: "0 0 760 480", role: "img", "aria-label": "Výukové porovnání stopy v zatáčce " + (index + 1) });
@@ -3978,26 +4011,27 @@
             function polyline(path) { return path.map(function (point) { var p = position(point); return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" "); }
             for (var grid = 50; grid < 760; grid += 50) svg.appendChild(createSvgElement("line", { x1: grid, y1: 0, x2: grid, y2: 480, stroke: "rgba(255,255,255,.035)", "stroke-width": "1" }));
             for (var gridY = 50; gridY < 480; gridY += 50) svg.appendChild(createSvgElement("line", { x1: 0, y1: gridY, x2: 760, y2: gridY, stroke: "rgba(255,255,255,.035)", "stroke-width": "1" }));
-            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "#3a4653", "stroke-width": "42", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: ".72" }));
-            svg.appendChild(createSvgElement("polyline", { points: polyline(actualPath), fill: "none", stroke: "rgba(0,0,0,.8)", "stroke-width": "15", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-            svg.appendChild(createSvgElement("polyline", { points: polyline(actualPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "9", "stroke-dasharray": "18 12", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "rgba(0,0,0,.82)", "stroke-width": "16", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "var(--primary)", "stroke-width": "9", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "#3a4653", "stroke-width": "30", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: ".66" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(actualPath), fill: "none", stroke: "rgba(0,0,0,.88)", "stroke-width": "8", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(actualPath), fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "4", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "rgba(0,0,0,.88)", "stroke-width": "8", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+            svg.appendChild(createSvgElement("polyline", { points: polyline(idealPath), fill: "none", stroke: "var(--primary)", "stroke-width": "4", "stroke-linecap": "round", "stroke-linejoin": "round" }));
             if (detail.reliable && detail.distance <= 4) {
               var from = position(detail.actual), to = position(detail.ideal);
               svg.appendChild(createSvgElement("line", { x1: from[0], y1: from[1], x2: to[0], y2: to[1], stroke: "#ff5964", "stroke-width": "7", "stroke-linecap": "round", "marker-end": "url(#kp-arrow-" + index + ")" }));
               var rangeText = detail.rangeLow.toFixed(1).replace(".", ",") + "–" + detail.rangeHigh.toFixed(1).replace(".", ",") + " m";
               svg.appendChild(createSvgElement("text", { x: (from[0] + to[0]) / 2 + 12, y: (from[1] + to[1]) / 2 - 12, fill: "white", "font-size": "20", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, rangeText));
             }
-            var apexFraction = (profile.cornerFractions[index] - profile.boundaries[index]) / Math.max(.001, profile.boundaries[index + 1] - profile.boundaries[index]);
-            [{ fraction: .08, text: "NÁJEZD" }, { fraction: Math.max(.12, Math.min(.88, apexFraction)), text: "VRCHOL" }, { fraction: .92, text: "VÝJEZD" }].forEach(function (mark) {
+            var localApexFraction = (apexFraction - focusStart) / Math.max(.001, focusEnd - focusStart);
+            [{ fraction: .06, text: "NÁJEZD" }, { fraction: Math.max(.12, Math.min(.88, localApexFraction)), text: "VRCHOL" }, { fraction: .94, text: "VÝJEZD" }].forEach(function (mark) {
               var point = position(gpsGateAtFraction(idealPath, mark.fraction));
               svg.appendChild(createSvgElement("circle", { cx: point[0], cy: point[1], r: "9", fill: "var(--primary)", stroke: "black", "stroke-width": "3" }));
               svg.appendChild(createSvgElement("text", { x: point[0] + 14, y: point[1] - 13, fill: "white", "font-size": "17", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, mark.text));
             });
             function drawBrakeMarker(brake, path, color, label, yOffset) {
-              if (!brake) return;
-              var brakePoint = position(gpsGateAtFraction(path, brake.fraction));
+              if (!brake || brake.fraction < focusStart || brake.fraction > focusEnd) return;
+              var localFraction = (brake.fraction - focusStart) / Math.max(.001, focusEnd - focusStart);
+              var brakePoint = position(gpsGateAtFraction(path, localFraction));
               svg.appendChild(createSvgElement("circle", { cx: brakePoint[0], cy: brakePoint[1], r: "13", fill: color, stroke: "white", "stroke-width": "3" }));
               svg.appendChild(createSvgElement("text", { x: brakePoint[0] + 18, y: brakePoint[1] + yOffset, fill: "white", "font-size": "16", "font-weight": "900", stroke: "black", "stroke-width": "4", "paint-order": "stroke" }, label));
             }
@@ -4005,19 +4039,46 @@
             drawBrakeMarker(analysis.idealBrake, idealPath, "var(--primary)", "ZAČÁTEK ZPOMALENÍ · VZOR", 24);
             var source = profile.bestSectorSources[index];
             var phase = detail.fraction < apexFraction - .10 ? "na nájezdu" : detail.fraction > apexFraction + .10 ? "na výjezdu" : "u vrcholu";
-            var instruction = detail.reliable && detail.distance <= 4
+            var lineInstruction = detail.reliable && detail.distance <= 4
               ? "V zatáčce " + (index + 1) + " se " + phase + " přibliž žluté stopě přibližně v rozsahu " + detail.rangeLow.toFixed(1).replace(".", ",") + "–" + detail.rangeHigh.toFixed(1).replace(".", ",") + " m. Rozdíl potvrdilo " + detail.samples + " kol."
               : "GPS nepotvrdila rozdíl stopy v této zatáčce dostatečně spolehlivě. Porovnej modrou a žlutou stopu, ale nedáváme přesný metrový pokyn.";
+            function speedText(value) { return Number.isFinite(value) ? value.toFixed(1).replace(".", ",") + " km/h" : "—"; }
+            function speedDelta(actual, ideal) {
+              if (!Number.isFinite(actual) || !Number.isFinite(ideal)) return "—";
+              var delta = actual - ideal;
+              return (delta >= 0 ? "+" : "−") + Math.abs(delta).toFixed(1).replace(".", ",") + " km/h";
+            }
+            var speedDeficit = Math.max(
+              Number.isFinite(actualSpeed.entry) && Number.isFinite(idealSpeed.entry) ? idealSpeed.entry - actualSpeed.entry : 0,
+              Number.isFinite(actualSpeed.minimum) && Number.isFinite(idealSpeed.minimum) ? idealSpeed.minimum - actualSpeed.minimum : 0,
+              Number.isFinite(actualSpeed.exit) && Number.isFinite(idealSpeed.exit) ? idealSpeed.exit - actualSpeed.exit : 0
+            );
+            var confirmedLineDifference = detail.reliable && detail.distance >= .5 && detail.distance <= 4;
+            var cause = confirmedLineDifference && speedDeficit >= 1
+              ? "Časová ztráta zde odpovídá kombinaci jiné stopy a nižší rychlosti."
+              : confirmedLineDifference
+                ? "Hlavní potvrzený rozdíl je ve stopě; rychlostní průběh je podobný."
+                : speedDeficit >= 1
+                  ? "Stopa je podle GPS podobná, ale čas se ztrácí hlavně nižší rychlostí nebo jejím pozdějším obnovením."
+                  : "Časový rozdíl je měřitelný, ale GPS zde nepotvrdila jedinou dostatečně silnou příčinu pro přesný jezdecký pokyn.";
+            var table = document.createElement("table");
+            table.className = "kp-corner-speed-table";
+            table.innerHTML = "<thead><tr><th>Průjezd</th><th class=\"is-actual\">Modrá · aktuální</th><th class=\"is-ideal\">Žlutá · ideál</th><th>Rozdíl</th></tr></thead><tbody>" +
+              "<tr><td>Čas celého sektoru</td><td class=\"is-actual\">" + formatLapTime(analysis.actualMs) + " s</td><td class=\"is-ideal\">" + formatLapTime(analysis.idealMs) + " s</td><td>+" + formatLapTime(analysis.gain) + " s</td></tr>" +
+              "<tr><td>Rychlost na nájezdu</td><td class=\"is-actual\">" + speedText(actualSpeed.entry) + "</td><td class=\"is-ideal\">" + speedText(idealSpeed.entry) + "</td><td>" + speedDelta(actualSpeed.entry, idealSpeed.entry) + "</td></tr>" +
+              "<tr><td>Minimální rychlost</td><td class=\"is-actual\">" + speedText(actualSpeed.minimum) + "</td><td class=\"is-ideal\">" + speedText(idealSpeed.minimum) + "</td><td>" + speedDelta(actualSpeed.minimum, idealSpeed.minimum) + "</td></tr>" +
+              "<tr><td>Rychlost na výjezdu</td><td class=\"is-actual\">" + speedText(actualSpeed.exit) + "</td><td class=\"is-ideal\">" + speedText(idealSpeed.exit) + "</td><td>" + speedDelta(actualSpeed.exit, idealSpeed.exit) + "</td></tr></tbody>";
             var note = document.createElement("p");
             var brakeText = analysis.actualBrake && analysis.idealBrake
               ? " Barevné body ukazují potvrzený odhad začátku zpomalování; nejde o měření brzdového pedálu."
               : " Začátek zpomalování se zobrazí jen při shodě alespoň tří kol.";
-            note.textContent = instruction + " Žlutý průjezd pochází z kola " + (source ? source.lap : "—") + "." + brakeText;
+            note.textContent = cause + " " + lineInstruction + " Žlutý průjezd pochází z kola " + (source ? source.lap : "—") + "." + brakeText;
             var task = document.createElement("div");
             task.className = "kp-coach-task";
-            task.textContent = "Úkol pro další jízdu: " + instruction;
+            task.textContent = "Úkol pro další jízdu: " + (confirmedLineDifference ? lineInstruction : speedDeficit >= 1 ? "Zopakuj rychlost žlutého průjezdu hlavně v bodě, kde tabulka ukazuje největší záporný rozdíl, bez násilné změny stopy." : "Tuto zatáčku zatím pouze porovnej; data nedávají dostatečně jistý konkrétní pokyn.");
             focus.appendChild(title);
             focus.appendChild(svg);
+            focus.appendChild(table);
             focus.appendChild(note);
             focus.appendChild(task);
           }
@@ -4030,9 +4091,7 @@
             button.addEventListener("click", function () { renderCoachCorner(analysis.index); });
             navigation.appendChild(button);
           });
-          var priority = cornerAnalyses.filter(function (analysis) {
-            return analysis.detail.reliable && analysis.detail.distance <= 4;
-          }).sort(function (first, second) { return second.gain - first.gain; })[0] || cornerAnalyses.slice().sort(function (first, second) { return second.gain - first.gain; })[0];
+          var priority = cornerAnalyses.slice().sort(function (first, second) { return second.gain - first.gain; })[0];
           renderCoachCorner(priority.index);
         }
         var resolutionNote = latest.gpsSampleStep === 1 ? "Stopa používá všechny GPS vzorky z Alfano ZIPu. " : "Pro plné GPS rozlišení nahraj ZIP tohoto tréninku znovu. ";
