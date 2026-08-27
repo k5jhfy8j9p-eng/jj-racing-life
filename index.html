@@ -366,6 +366,11 @@
       grid-column: 2;
       position: relative;
       z-index: 1;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      align-content: stretch;
+      gap: 7px;
+      padding-top: 10px;
+      padding-bottom: 10px;
       transform: translateY(-4px);
       border: 2px solid var(--viz-series-2);
       border-top: 5px solid var(--primary);
@@ -388,14 +393,20 @@
     }
 
     #karting-program-app .kp-team-title {
-      margin-top: 4px;
-      font-size: clamp(1.35rem, 1.65vw, 2rem);
+      margin-top: 2px;
+      font-size: clamp(1.2rem, 1.5vw, 1.8rem);
+      line-height: 1.05;
       font-weight: 750;
     }
 
+    #karting-program-app .kp-team-card > div:nth-child(2) {
+      min-height: 0;
+      align-self: center;
+    }
+
     #karting-program-app .kp-team-count {
-      font-size: clamp(3.4rem, 5.5vw, 6.6rem);
-      line-height: 1;
+      font-size: clamp(2.8rem, 4.65vw, 5.5rem);
+      line-height: .9;
       font-variant-numeric: tabular-nums;
       font-weight: 650;
       letter-spacing: -.03em;
@@ -403,7 +414,8 @@
     }
 
     #karting-program-app .kp-alert {
-      padding: 10px 12px;
+      min-height: 32px;
+      padding: 6px 10px;
       border-radius: 10px;
       background: var(--primary);
       color: var(--primary-foreground);
