@@ -824,7 +824,7 @@
     <section class="card kp-alfano-panel" aria-live="polite">
       <div class="kp-alfano-head">
         <div class="kp-alfano-head-copy">
-          <span class="kp-eyebrow">ALFANO · VÝKON VÍKENDU</span>
+          <span class="kp-eyebrow">JJ · VÝKON VÍKENDU</span>
           <span class="kp-subtle" id="kp-alfano-summary">Zatím nejsou nahraná žádná data</span>
         </div>
         <div class="kp-dialog-actions"><button type="button" class="btn btn-primary" id="kp-open-data-center">Datové centrum</button><button type="button" class="btn" id="kp-manage-alfano">Nahrát Alfano ZIP</button></div>
@@ -840,6 +840,28 @@
         <span class="kp-subtle">Nejlepší kolo jednotlivých tréninků</span>
         <div class="kp-chart-empty" id="kp-alfano-empty">Po jízdě nahraj ZIP z Alfana</div>
         <svg id="kp-alfano-chart" viewBox="0 0 680 160" role="img" aria-label="Vývoj nejlepších časů tréninků" hidden></svg>
+      </div>
+    </section>
+
+    <section class="card kp-alfano-panel kp-tomas-panel" aria-live="polite">
+      <div class="kp-alfano-head">
+        <div class="kp-alfano-head-copy">
+          <span class="kp-eyebrow">TOMÁŠ · VÝKON VÍKENDU</span>
+          <span class="kp-subtle" id="kp-tomas-summary">Zatím nejsou nahraná žádná data</span>
+        </div>
+        <div class="kp-dialog-actions"><button type="button" class="btn btn-primary" id="kp-tomas-data-center">Datové centrum</button><button type="button" class="btn" id="kp-manage-mychron">Nahrát MyChron XRK</button></div>
+      </div>
+      <div class="kp-alfano-metrics">
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-tomas-records"><span>Osobní rekord</span><strong id="kp-tomas-best">—</strong><small id="kp-tomas-best-note">rekord tratě</small></button>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-tomas-latest-button"><span>Poslední trénink</span><strong id="kp-tomas-latest">—</strong><small id="kp-tomas-latest-note">zatím bez dat</small></button>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-tomas-consistency-button"><span>Konzistence</span><strong id="kp-tomas-consistency">—</strong><small id="kp-tomas-consistency-note">kola do +0,5 s</small></button>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-tomas-ideal-button"><span>Virtuální ideál</span><strong id="kp-tomas-ideal">—</strong><small id="kp-tomas-ideal-note">ideál po zatáčkách</small></button>
+        <button type="button" class="kp-alfano-stat kp-ideal-trigger" id="kp-tomas-mileage-button"><span>Celkem kol</span><strong id="kp-tomas-total-laps">—</strong><small id="kp-tomas-total-laps-note">0 tréninků</small></button>
+      </div>
+      <div class="kp-alfano-chart-wrap">
+        <span class="kp-subtle">Nejlepší kolo jednotlivých tréninků</span>
+        <div class="kp-chart-empty" id="kp-tomas-empty">Po jízdě nahraj XRK soubory z MyChronu</div>
+        <svg id="kp-tomas-chart" viewBox="0 0 680 160" role="img" aria-label="Vývoj nejlepších časů Tomášových tréninků" hidden></svg>
       </div>
     </section>
 
@@ -924,6 +946,27 @@
       <div class="kp-dialog-actions">
         <button type="button" class="btn btn-ghost" id="kp-clear-alfano">Vymazat všechny tréninky</button>
         <button type="button" class="btn btn-primary" id="kp-import-alfano">Načíst vybrané ZIPy</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="kp-pdf-dialog" id="kp-mychron-dialog">
+    <div class="kp-dialog-body">
+      <div class="kp-dialog-head">
+        <div>
+          <h2>Tomášova data z MyChronu</h2>
+          <p class="kp-dialog-copy">Vyber všechny XRK soubory z Race Studio. Aplikace je zpracuje pouze v tomto zařízení a automaticky vyřadí záznamy bez skutečné jízdy.</p>
+        </div>
+        <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
+      </div>
+      <div>
+        <label class="form-label" for="kp-mychron-files">XRK soubory z MyChronu</label>
+        <input class="form-control kp-file-input" id="kp-mychron-files" type="file" accept=".xrk,.xrz" multiple>
+      </div>
+      <div class="kp-alfano-message" id="kp-mychron-message">Soubory se přidají k Tomášovým dříve uloženým tréninkům.</div>
+      <div class="kp-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="kp-clear-mychron">Vymazat Tomášovy tréninky</button>
+        <button type="button" class="btn btn-primary" id="kp-import-mychron">Načíst vybrané XRK</button>
       </div>
     </div>
   </dialog>
@@ -1128,6 +1171,16 @@
       var alfanoSessions = [];
       var alfanoTrackRecords = {};
       var alfanoSectorProfiles = {};
+      var activeDataPilot = "JJ";
+
+      function pilotKey(value) {
+        var key = String(value || "JJ").trim().toLocaleUpperCase("cs-CZ");
+        return key.indexOf("TOM") === 0 ? "TOMAS" : "JJ";
+      }
+
+      function pilotSessions(key) {
+        return alfanoSessions.filter(function (session) { return alfanoSessionIsValid(session) && pilotKey(session.driver) === key; });
+      }
 
       function loadSetting(key) {
         try { return localStorage.getItem(key); } catch (error) { return null; }
@@ -1261,6 +1314,13 @@
         dataBadge: root.querySelector("#kp-data-badge"),
         pdfConfirmation: root.querySelector("#kp-pdf-confirmation"),
         manageAlfano: root.querySelector("#kp-manage-alfano"),
+        manageMychron: root.querySelector("#kp-manage-mychron"),
+        mychronDialog: root.querySelector("#kp-mychron-dialog"),
+        mychronFiles: root.querySelector("#kp-mychron-files"),
+        mychronMessage: root.querySelector("#kp-mychron-message"),
+        importMychron: root.querySelector("#kp-import-mychron"),
+        clearMychron: root.querySelector("#kp-clear-mychron"),
+        tomasDataCenter: root.querySelector("#kp-tomas-data-center"),
         openDataCenter: root.querySelector("#kp-open-data-center"),
         dataCenterDialog: root.querySelector("#kp-data-center-dialog"),
         dataCenterCopy: root.querySelector("#kp-data-center-copy"),
@@ -1351,6 +1411,24 @@
         trackList: root.querySelector("#kp-track-list"),
         alfanoChart: root.querySelector("#kp-alfano-chart"),
         alfanoEmpty: root.querySelector("#kp-alfano-empty"),
+        tomasSummary: root.querySelector("#kp-tomas-summary"),
+        tomasBest: root.querySelector("#kp-tomas-best"),
+        tomasBestNote: root.querySelector("#kp-tomas-best-note"),
+        tomasLatest: root.querySelector("#kp-tomas-latest"),
+        tomasLatestNote: root.querySelector("#kp-tomas-latest-note"),
+        tomasConsistency: root.querySelector("#kp-tomas-consistency"),
+        tomasConsistencyNote: root.querySelector("#kp-tomas-consistency-note"),
+        tomasIdeal: root.querySelector("#kp-tomas-ideal"),
+        tomasIdealNote: root.querySelector("#kp-tomas-ideal-note"),
+        tomasTotalLaps: root.querySelector("#kp-tomas-total-laps"),
+        tomasTotalLapsNote: root.querySelector("#kp-tomas-total-laps-note"),
+        tomasChart: root.querySelector("#kp-tomas-chart"),
+        tomasEmpty: root.querySelector("#kp-tomas-empty"),
+        tomasRecords: root.querySelector("#kp-tomas-records"),
+        tomasLatestButton: root.querySelector("#kp-tomas-latest-button"),
+        tomasConsistencyButton: root.querySelector("#kp-tomas-consistency-button"),
+        tomasIdealButton: root.querySelector("#kp-tomas-ideal-button"),
+        tomasMileageButton: root.querySelector("#kp-tomas-mileage-button"),
         minus: root.querySelector("#kp-delay-minus"),
         reset: root.querySelector("#kp-delay-reset"),
         plus: root.querySelector("#kp-delay-plus"),
@@ -2222,11 +2300,11 @@
       }
 
       function renderConsistencyDetail() {
-        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        var sorted = dataSessions();
         var latest = sorted[sorted.length - 1];
         elements.lapList.innerHTML = "";
         if (!latest) {
-          elements.consistencyCopy.textContent = "Nejdřív nahraj data z Alfana.";
+          elements.consistencyCopy.textContent = "Nejdřív nahraj telemetrii jezdce.";
           return;
         }
         var validNumbers = new Set(analysisLaps(latest).map(function (lap) { return lap.lap; }));
@@ -2244,10 +2322,10 @@
       }
 
       function renderRecordsDetail() {
-        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        var sorted = dataSessions();
         elements.recordGrid.innerHTML = "";
         if (!sorted.length) {
-          elements.recordsCopy.textContent = "Nejdřív nahraj data z Alfana.";
+          elements.recordsCopy.textContent = "Nejdřív nahraj telemetrii jezdce.";
           elements.recordsHistory.textContent = "";
           return;
         }
@@ -2299,7 +2377,7 @@
       }
 
       function renderLatestReport() {
-        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        var sorted = dataSessions();
         var latest = sorted[sorted.length - 1];
         elements.latestGrid.innerHTML = "";
         elements.latestChart.innerHTML = "";
@@ -2514,7 +2592,7 @@
         valid.forEach(function (session) {
           delete session._trackConfigurationKey;
           session._trackShapeVersion = trackShapeVersion;
-          var base = trackRecordKey(session.track);
+          var base = pilotKey(session.driver) + "|" + trackRecordKey(session.track);
           if (!byBase[base]) byBase[base] = [];
           byBase[base].push(session);
         });
@@ -2556,7 +2634,7 @@
       }
 
       function trackConfigurationKey(session) {
-        var base = trackRecordKey(session && session.track);
+        var base = pilotKey(session && session.driver) + "|" + trackRecordKey(session && session.track);
         if (!session) return base;
         if (session._trackShapeVersion !== trackShapeVersion || !session._trackConfigurationKey) {
           assignTrackConfigurations(typeof alfanoSessions !== "undefined" && Array.isArray(alfanoSessions) ? alfanoSessions : [session]);
@@ -2568,7 +2646,7 @@
         var key = trackConfigurationKey(session);
         var base = trackRecordKey(session && session.track);
         var configurations = new Set((typeof alfanoSessions !== "undefined" && Array.isArray(alfanoSessions) ? alfanoSessions : []).filter(function (candidate) {
-          return trackRecordKey(candidate && candidate.track) === base;
+          return pilotKey(candidate && candidate.driver) === pilotKey(session && session.driver) && trackRecordKey(candidate && candidate.track) === base;
         }).map(trackConfigurationKey));
         if (configurations.size <= 1) return "";
         var match = /\|GPS(\d+)$/.exec(key);
@@ -2623,7 +2701,7 @@
       }
 
       function renderMileageDetail() {
-        var sorted = alfanoSessions.filter(alfanoSessionIsValid);
+        var sorted = dataSessions();
         elements.mileageGrid.innerHTML = "";
         elements.trackList.innerHTML = "";
         if (!sorted.length) return;
@@ -2647,7 +2725,7 @@
           venueKeys.add(key);
           venueNames.push(session.track);
         });
-        elements.mileageCopy.textContent = "Souhrn všech uložených Alfano tréninků";
+        elements.mileageCopy.textContent = "Souhrn všech uložených tréninků jezdce";
         appendRecordItem(elements.mileageGrid, "Celkem kol", String(totalLaps), sorted.length + " tréninků");
         appendRecordItem(elements.mileageGrid, "Počet tratí", String(venueNames.length), venueNames.join(" · "));
         appendRecordItem(elements.mileageGrid, "Konfigurace tratí", String(trackValues.length), "samostatně vyhodnocované varianty");
@@ -2664,7 +2742,7 @@
       }
 
       function dataSessions() {
-        return alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        return pilotSessions(activeDataPilot).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
       }
 
       function selectedDataSession() {
@@ -3714,7 +3792,7 @@
       function rebuildTelemetryAnalytics(sessions) {
         sessions.filter(alfanoSessionIsValid).forEach(normalizeAlfanoSession);
         assignTrackConfigurations(sessions);
-        var activeBases = new Set(sessions.filter(alfanoSessionIsValid).map(function (session) { return trackRecordKey(session.track); }));
+        var activeBases = new Set(sessions.filter(alfanoSessionIsValid).map(function (session) { return pilotKey(session.driver) + "|" + trackRecordKey(session.track); }));
         Object.keys(alfanoTrackRecords).forEach(function (key) {
           activeBases.forEach(function (base) { if (key === base || key.indexOf(base + "|") === 0) delete alfanoTrackRecords[key]; });
         });
@@ -3983,7 +4061,7 @@
       }
 
       function renderIdealMap() {
-        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+        var sorted = dataSessions();
         var latest = sorted[sorted.length - 1];
         var profile = latest ? alfanoSectorProfiles[trackConfigurationKey(latest)] : null;
         var currentBestGpsLap = latest ? gpsLapFor(latest, latest.bestLap) : null;
@@ -3997,7 +4075,7 @@
         if (!hasPaths) {
           elements.idealMap.setAttribute("hidden", "");
           elements.idealMapEmpty.removeAttribute("hidden");
-          elements.idealMapDetails.textContent = latest ? "Časy jsou uložené, ale GPS stopa ještě ne. Nahraj ZIPy této tratě znovu." : "Nejdřív nahraj data z Alfana.";
+          elements.idealMapDetails.textContent = latest ? "Časy jsou uložené, ale GPS stopa ještě ne. Nahraj zdrojové soubory této tratě znovu." : "Nejdřív nahraj telemetrii jezdce.";
           elements.idealPotential.textContent = "";
           elements.idealSummary.innerHTML = "";
           elements.cornerVisuals.innerHTML = "";
@@ -4296,21 +4374,23 @@
           var priority = cornerAnalyses.slice().sort(function (first, second) { return second.gain - first.gain; })[0];
           renderCoachCorner(priority.index);
         }
-        var resolutionNote = latest.gpsSampleStep === 1 ? "Stopa používá všechny GPS vzorky z Alfano ZIPu. " : "Pro plné GPS rozlišení nahraj ZIP tohoto tréninku znovu. ";
+        var sourceName = latest.source === "mychron" ? "MyChron XRK" : "Alfano ZIP";
+        var resolutionNote = latest.gpsSampleStep === 1 ? "Stopa používá všechny GPS vzorky z " + sourceName + ". " : "Pro plné GPS rozlišení nahraj zdrojový soubor tohoto tréninku znovu. ";
         elements.idealMapDetails.textContent = resolutionNote + (background ? "Letecký podklad: Ortofoto ČR © ČÚZK. " : "Čisté zobrazení zvýrazňuje pouze skutečné rozdíly obou GPS stop. ") + "Modrá je nejrychlejší kolo aktuálního tréninku, žlutá nejlepší známý průjezd dané zatáčky. Metry se zobrazují jen při shodě směru alespoň ve třech kolech a jako rozsah, nikoli maximum. Body zpomalování jsou odhad z GPS rychlosti, podélného zpomalení a podpůrně z otáček; nejde o snímač brzdy.";
       }
 
-      function renderAlfanoChart(sortedSessions) {
+      function renderAlfanoChart(sortedSessions, ui) {
         var chartSessions = sortedSessions.slice(-10);
-        elements.alfanoChart.innerHTML = "";
+        var chart = ui.chart, empty = ui.empty;
+        chart.innerHTML = "";
         if (!chartSessions.length) {
-          elements.alfanoChart.setAttribute("hidden", "");
-          elements.alfanoEmpty.removeAttribute("hidden");
+          chart.setAttribute("hidden", "");
+          empty.removeAttribute("hidden");
           return;
         }
 
-        elements.alfanoChart.removeAttribute("hidden");
-        elements.alfanoEmpty.setAttribute("hidden", "");
+        chart.removeAttribute("hidden");
+        empty.setAttribute("hidden", "");
         var width = 680;
         var height = 160;
         var left = 42;
@@ -4324,7 +4404,7 @@
         var usableWidth = width - left - right;
         var usableHeight = height - top - bottom;
 
-        elements.alfanoChart.appendChild(createSvgElement("line", {
+        chart.appendChild(createSvgElement("line", {
           x1: left, y1: height - bottom, x2: width - right, y2: height - bottom,
           stroke: "var(--border)", "stroke-width": "1"
         }));
@@ -4336,7 +4416,7 @@
         });
 
         if (points.length > 1) {
-          elements.alfanoChart.appendChild(createSvgElement("polyline", {
+          chart.appendChild(createSvgElement("polyline", {
             points: points.map(function (point) { return point.x + "," + point.y; }).join(" "),
             fill: "none", stroke: "var(--viz-series-2)", "stroke-width": "4", "stroke-linejoin": "round", "stroke-linecap": "round"
           }));
@@ -4344,15 +4424,15 @@
 
         points.forEach(function (point) {
           var isBest = point.session.bestMs === Math.min.apply(null, sortedSessions.map(function (session) { return session.bestMs; }));
-          elements.alfanoChart.appendChild(createSvgElement("circle", {
+          chart.appendChild(createSvgElement("circle", {
             cx: point.x, cy: point.y, r: isBest ? "7" : "6",
             fill: isBest ? "var(--primary)" : "var(--viz-series-2)",
             stroke: "var(--background)", "stroke-width": "2"
           }));
-          elements.alfanoChart.appendChild(createSvgElement("text", {
+          chart.appendChild(createSvgElement("text", {
             x: point.x, y: Math.max(15, point.y - 11), "text-anchor": "middle", fill: "currentColor", "font-size": "12", "font-weight": "700"
           }, formatLapTime(point.session.bestMs)));
-          elements.alfanoChart.appendChild(createSvgElement("text", {
+          chart.appendChild(createSvgElement("text", {
             x: point.x, y: height - 11, "text-anchor": "middle", fill: "var(--muted-foreground)", "font-size": "12", "font-weight": "600"
           }, point.session.time || "T" + (point.index + 1)));
         });
@@ -4373,23 +4453,19 @@
         return weekend;
       }
 
-      function renderAlfano() {
-        var sorted = alfanoSessions.filter(alfanoSessionIsValid).slice().sort(function (a, b) {
+      function renderPilotDashboard(key, ui) {
+        var sorted = pilotSessions(key).slice().sort(function (a, b) {
           return (a.timestamp || 0) - (b.timestamp || 0) || a.fileName.localeCompare(b.fileName);
         });
         if (!sorted.length) {
-          elements.alfanoSummary.textContent = "Zatím nejsou nahraná žádná data";
-          elements.alfanoBest.textContent = "—";
-          elements.alfanoLatest.textContent = "—";
-          elements.alfanoConsistency.textContent = "—";
-          elements.alfanoLaps.textContent = "—";
-          elements.alfanoTotalLaps.textContent = "—";
-          elements.alfanoBestNote.textContent = "rekord tratě";
-          elements.alfanoLatestNote.textContent = "zatím bez dat";
-          elements.alfanoConsistencyNote.textContent = "kola do +0,5 s";
-          elements.alfanoLapsNote.textContent = "3 GPS sektory";
-          elements.alfanoTotalLapsNote.textContent = "0 tréninků";
-          renderAlfanoChart([]);
+          ui.summary.textContent = "Zatím nejsou nahraná žádná data";
+          ui.best.textContent = ui.latest.textContent = ui.consistency.textContent = ui.ideal.textContent = ui.totalLaps.textContent = "—";
+          ui.bestNote.textContent = "rekord tratě";
+          ui.latestNote.textContent = "zatím bez dat";
+          ui.consistencyNote.textContent = "kola do +0,5 s";
+          ui.idealNote.textContent = "ideál po zatáčkách";
+          ui.totalLapsNote.textContent = "0 tréninků";
+          renderAlfanoChart([], ui);
           return;
         }
 
@@ -4401,18 +4477,37 @@
         var latestDelta = latest.bestMs - record.bestMs;
         var consistency = calculateConsistency(latest);
 
-        elements.alfanoSummary.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink víkendu" : weekendSessions.length < 5 ? " tréninky víkendu" : " tréninků víkendu") + " · " + trackConfigurationName(latest) + " · poslední " + latest.time;
-        elements.alfanoBest.textContent = formatLapTime(record.bestMs);
-        elements.alfanoBestNote.textContent = trackConfigurationName(latest) + (record.bestLap ? " · kolo " + record.bestLap : "");
-        elements.alfanoLatest.textContent = formatLapTime(latest.bestMs);
-        elements.alfanoLatestNote.textContent = latestDelta === 0 ? "OSOBNÍ REKORD" : "+" + formatLapTime(latestDelta) + " s k rekordu";
-        elements.alfanoConsistency.textContent = consistency.total >= 3 ? consistency.percent + " %" : "—";
-        elements.alfanoConsistencyNote.textContent = consistency.total >= 3 ? consistency.count + " z " + consistency.total + " kol do +0,5 s" : "málo měřených kol";
-        elements.alfanoLaps.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? formatLapTime(sectorProfile.theoreticalMs) : "—";
-        elements.alfanoLapsNote.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? "−" + formatLapTime(Math.max(0, record.bestMs - sectorProfile.theoreticalMs)) + " s potenciál · GPS" : "nahraj ZIPy znovu pro GPS";
-        elements.alfanoTotalLaps.textContent = String(totalLaps);
-        elements.alfanoTotalLapsNote.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink tohoto víkendu" : weekendSessions.length < 5 ? " tréninky tohoto víkendu" : " tréninků tohoto víkendu");
-        renderAlfanoChart(weekendSessions);
+        ui.summary.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink víkendu" : weekendSessions.length < 5 ? " tréninky víkendu" : " tréninků víkendu") + " · " + trackConfigurationName(latest) + " · poslední " + latest.time;
+        ui.best.textContent = formatLapTime(record.bestMs);
+        ui.bestNote.textContent = trackConfigurationName(latest) + (record.bestLap ? " · kolo " + record.bestLap : "");
+        ui.latest.textContent = formatLapTime(latest.bestMs);
+        ui.latestNote.textContent = latestDelta === 0 ? "OSOBNÍ REKORD" : "+" + formatLapTime(latestDelta) + " s k rekordu";
+        ui.consistency.textContent = consistency.total >= 3 ? consistency.percent + " %" : "—";
+        ui.consistencyNote.textContent = consistency.total >= 3 ? consistency.count + " z " + consistency.total + " kol do +0,5 s" : "málo měřených kol";
+        ui.ideal.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? formatLapTime(sectorProfile.theoreticalMs) : "—";
+        ui.idealNote.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? "−" + formatLapTime(Math.max(0, record.bestMs - sectorProfile.theoreticalMs)) + " s potenciál · GPS" : "nahraj telemetrii znovu pro GPS";
+        ui.totalLaps.textContent = String(totalLaps);
+        ui.totalLapsNote.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink tohoto víkendu" : weekendSessions.length < 5 ? " tréninky tohoto víkendu" : " tréninků tohoto víkendu");
+        renderAlfanoChart(weekendSessions, ui);
+      }
+
+      function renderAlfano() {
+        renderPilotDashboard("JJ", {
+          summary: elements.alfanoSummary, best: elements.alfanoBest, bestNote: elements.alfanoBestNote,
+          latest: elements.alfanoLatest, latestNote: elements.alfanoLatestNote,
+          consistency: elements.alfanoConsistency, consistencyNote: elements.alfanoConsistencyNote,
+          ideal: elements.alfanoLaps, idealNote: elements.alfanoLapsNote,
+          totalLaps: elements.alfanoTotalLaps, totalLapsNote: elements.alfanoTotalLapsNote,
+          chart: elements.alfanoChart, empty: elements.alfanoEmpty
+        });
+        renderPilotDashboard("TOMAS", {
+          summary: elements.tomasSummary, best: elements.tomasBest, bestNote: elements.tomasBestNote,
+          latest: elements.tomasLatest, latestNote: elements.tomasLatestNote,
+          consistency: elements.tomasConsistency, consistencyNote: elements.tomasConsistencyNote,
+          ideal: elements.tomasIdeal, idealNote: elements.tomasIdealNote,
+          totalLaps: elements.tomasTotalLaps, totalLapsNote: elements.tomasTotalLapsNote,
+          chart: elements.tomasChart, empty: elements.tomasEmpty
+        });
       }
 
       async function importAlfanoFiles() {
@@ -4447,6 +4542,62 @@
         } finally {
           elements.importAlfano.disabled = false;
           elements.importAlfano.textContent = "Načíst vybrané ZIPy";
+        }
+      }
+
+      function parseMychronFile(file) {
+        return new Promise(function (resolve, reject) {
+          var worker = new Worker("mychron-worker.js", { type: "module" });
+          worker.onmessage = function (event) {
+            worker.terminate();
+            if (event.data && event.data.ok) resolve(normalizeAlfanoSession(event.data.session));
+            else reject(new Error(event.data && event.data.error || file.name + ": XRK se nepodařilo načíst."));
+          };
+          worker.onerror = function () {
+            worker.terminate();
+            reject(new Error(file.name + ": importér MyChronu se nepodařilo spustit."));
+          };
+          file.arrayBuffer().then(function (buffer) { worker.postMessage({ name: file.name, buffer: buffer }, [buffer]); }).catch(reject);
+        });
+      }
+
+      function sessionIdentity(session) {
+        return [pilotKey(session.driver), trackRecordKey(session.track), session.date || "", session.time || "", session.fileName || ""].join("|");
+      }
+
+      async function importMychronFiles() {
+        var files = Array.from(elements.mychronFiles.files || []);
+        if (!files.length) {
+          elements.mychronMessage.textContent = "Nejdřív vyber alespoň jeden XRK soubor.";
+          elements.mychronMessage.classList.add("is-error");
+          return;
+        }
+        elements.importMychron.disabled = true;
+        elements.importMychron.textContent = "Načítám 0/" + files.length + "…";
+        elements.mychronMessage.classList.remove("is-error");
+        var imported = [], rejected = [];
+        try {
+          for (var index = 0; index < files.length; index += 1) {
+            elements.importMychron.textContent = "Načítám " + (index + 1) + "/" + files.length + "…";
+            elements.mychronMessage.textContent = "Zpracovávám " + files[index].name + ". Velké XRK může trvat několik sekund.";
+            try { imported.push(await parseMychronFile(files[index])); }
+            catch (error) { rejected.push(error.message); }
+          }
+          if (!imported.length) throw new Error(rejected[0] || "V souborech nebyla nalezena žádná skutečná jízda.");
+          var bySession = new Map(alfanoSessions.map(function (session) { return [sessionIdentity(session), session]; }));
+          imported.forEach(function (session) { bySession.set(sessionIdentity(session), session); });
+          alfanoSessions = Array.from(bySession.values());
+          rebuildTelemetryAnalytics(alfanoSessions);
+          await saveAlfanoSessions();
+          renderAlfano();
+          elements.mychronMessage.textContent = "Načteno: " + imported.length + " Tomášových tréninků" + (rejected.length ? ". Vyřazeno bez jízdy nebo bez úplného kola: " + rejected.length + "." : ".");
+          elements.mychronFiles.value = "";
+        } catch (error) {
+          elements.mychronMessage.textContent = error && error.message ? error.message : "XRK se nepodařilo načíst.";
+          elements.mychronMessage.classList.add("is-error");
+        } finally {
+          elements.importMychron.disabled = false;
+          elements.importMychron.textContent = "Načíst vybrané XRK";
         }
       }
 
@@ -4796,7 +4947,16 @@
       elements.manageAlfano.addEventListener("click", function () {
         if (typeof elements.alfanoDialog.showModal === "function") elements.alfanoDialog.showModal();
       });
+      elements.manageMychron.addEventListener("click", function () {
+        if (typeof elements.mychronDialog.showModal === "function") elements.mychronDialog.showModal();
+      });
       elements.openDataCenter.addEventListener("click", function () {
+        activeDataPilot = "JJ";
+        renderDataCenter();
+        if (typeof elements.dataCenterDialog.showModal === "function") elements.dataCenterDialog.showModal();
+      });
+      elements.tomasDataCenter.addEventListener("click", function () {
+        activeDataPilot = "TOMAS";
         renderDataCenter();
         if (typeof elements.dataCenterDialog.showModal === "function") elements.dataCenterDialog.showModal();
       });
@@ -4810,6 +4970,12 @@
       elements.compareA.addEventListener("change", function () { renderComparison(selectedDataSession()); });
       elements.compareB.addEventListener("change", function () { renderComparison(selectedDataSession()); });
       elements.openIdealMap.addEventListener("click", function () {
+        activeDataPilot = "JJ";
+        renderIdealMap();
+        if (typeof elements.idealMapDialog.showModal === "function") elements.idealMapDialog.showModal();
+      });
+      elements.tomasIdealButton.addEventListener("click", function () {
+        activeDataPilot = "TOMAS";
         renderIdealMap();
         if (typeof elements.idealMapDialog.showModal === "function") elements.idealMapDialog.showModal();
       });
@@ -4853,22 +5019,56 @@
       elements.idealMap.addEventListener("pointerup", finishIdealMapDrag);
       elements.idealMap.addEventListener("pointercancel", finishIdealMapDrag);
       elements.openConsistency.addEventListener("click", function () {
+        activeDataPilot = "JJ";
+        renderConsistencyDetail();
+        if (typeof elements.consistencyDialog.showModal === "function") elements.consistencyDialog.showModal();
+      });
+      elements.tomasConsistencyButton.addEventListener("click", function () {
+        activeDataPilot = "TOMAS";
         renderConsistencyDetail();
         if (typeof elements.consistencyDialog.showModal === "function") elements.consistencyDialog.showModal();
       });
       elements.openRecords.addEventListener("click", function () {
+        activeDataPilot = "JJ";
+        renderRecordsDetail();
+        if (typeof elements.recordsDialog.showModal === "function") elements.recordsDialog.showModal();
+      });
+      elements.tomasRecords.addEventListener("click", function () {
+        activeDataPilot = "TOMAS";
         renderRecordsDetail();
         if (typeof elements.recordsDialog.showModal === "function") elements.recordsDialog.showModal();
       });
       elements.openLatest.addEventListener("click", function () {
+        activeDataPilot = "JJ";
+        renderLatestReport();
+        if (typeof elements.latestDialog.showModal === "function") elements.latestDialog.showModal();
+      });
+      elements.tomasLatestButton.addEventListener("click", function () {
+        activeDataPilot = "TOMAS";
         renderLatestReport();
         if (typeof elements.latestDialog.showModal === "function") elements.latestDialog.showModal();
       });
       elements.openMileage.addEventListener("click", function () {
+        activeDataPilot = "JJ";
+        renderMileageDetail();
+        if (typeof elements.mileageDialog.showModal === "function") elements.mileageDialog.showModal();
+      });
+      elements.tomasMileageButton.addEventListener("click", function () {
+        activeDataPilot = "TOMAS";
         renderMileageDetail();
         if (typeof elements.mileageDialog.showModal === "function") elements.mileageDialog.showModal();
       });
       elements.importAlfano.addEventListener("click", importAlfanoFiles);
+      elements.importMychron.addEventListener("click", importMychronFiles);
+      elements.clearMychron.addEventListener("click", async function () {
+        if (!window.confirm("Opravdu vymazat všechny Tomášovy uložené tréninky?")) return;
+        alfanoSessions = alfanoSessions.filter(function (session) { return pilotKey(session.driver) !== "TOMAS"; });
+        rebuildTelemetryAnalytics(alfanoSessions);
+        await saveAlfanoSessions();
+        renderAlfano();
+        elements.mychronMessage.textContent = "Tomášova data byla vymazána. JJ data zůstala beze změny.";
+        elements.mychronMessage.classList.remove("is-error");
+      });
       elements.exportBackup.addEventListener("click", exportAlfanoBackup);
       elements.restoreBackup.addEventListener("click", function () { elements.backupFile.click(); });
       elements.backupFile.addEventListener("change", function () {
@@ -4877,7 +5077,8 @@
       });
       elements.clearAlfano.addEventListener("click", async function () {
         if (!window.confirm("Opravdu vymazat všechny uložené tréninky tohoto víkendu?")) return;
-        alfanoSessions = [];
+        alfanoSessions = alfanoSessions.filter(function (session) { return pilotKey(session.driver) !== "JJ"; });
+        rebuildTelemetryAnalytics(alfanoSessions);
         await saveAlfanoSessions();
         renderAlfano();
         elements.alfanoMessage.textContent = "Data víkendu byla vymazána.";
