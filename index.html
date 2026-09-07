@@ -1743,13 +1743,17 @@
             line = { y: y, parts: [] };
             lines.push(line);
           }
-          line.parts.push({ x: x, text: textItem.str.trim() });
+          line.parts.push({ x: x, width: Number(textItem.width) || 0, text: textItem.str.trim() });
         });
 
         return lines.sort(function (a, b) { return b.y - a.y; }).map(function (line) {
-          return line.parts.sort(function (a, b) { return a.x - b.x; }).map(function (part) {
-            return part.text;
-          }).join(" | ").replace(/\s+/g, " ").trim();
+          var parts = line.parts.sort(function (a, b) { return a.x - b.x; });
+          return parts.map(function (part, index) {
+            if (!index) return part.text;
+            var previous = parts[index - 1];
+            var gap = part.x - (previous.x + previous.width);
+            return (gap > 24 ? " | " : gap > 2.2 ? " " : "") + part.text;
+          }).join("").replace(/\s+/g, " ").trim();
         });
       }
 
@@ -2186,7 +2190,7 @@
         });
 
         elements.reloadPdf.disabled = false;
-        elements.reloadPdf.textContent = "Ověřit a načíst PDF";
+        elements.reloadPdf.textContent = "Načíst zveřejněnou verzi";
         remoteLoading = false;
         pdfCheckCompleted = true;
         renderPdfStatus(false);

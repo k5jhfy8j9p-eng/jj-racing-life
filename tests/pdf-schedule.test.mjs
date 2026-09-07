@@ -42,11 +42,17 @@ function groupTextItemsIntoLines(items) {
       line = { y, parts: [] };
       lines.push(line);
     }
-    line.parts.push({ x, text: textItem.str.trim() });
+    line.parts.push({ x, width: Number(textItem.width) || 0, text: textItem.str.trim() });
   });
-  return lines.sort((a, b) => b.y - a.y).map((line) =>
-    line.parts.sort((a, b) => a.x - b.x).map((part) => part.text).join(" | ").replace(/\s+/g, " ").trim()
-  );
+  return lines.sort((a, b) => b.y - a.y).map((line) => {
+    const parts = line.parts.sort((a, b) => a.x - b.x);
+    return parts.map((part, index) => {
+      if (!index) return part.text;
+      const previous = parts[index - 1];
+      const gap = part.x - (previous.x + previous.width);
+      return `${gap > 24 ? " | " : gap > 2.2 ? " " : ""}${part.text}`;
+    }).join("").replace(/\s+/g, " ").trim();
+  });
 }
 
 async function extractLines(file) {
