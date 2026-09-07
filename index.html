@@ -1981,11 +1981,12 @@
       async function parseLocalPdfFile(file) {
         if (!file || !/\.pdf$/i.test(file.name || "")) throw new Error("Vyber platný PDF soubor.");
         var buffer = await file.arrayBuffer();
+        var fingerprint = fingerprintPdf(buffer);
         var lines = await extractPdfLines(buffer);
         return {
           sessions: parseScheduleLines(lines),
           supportEvents: parseSupportEvents(lines),
-          fingerprint: fingerprintPdf(buffer),
+          fingerprint: fingerprint,
           fileName: file.name,
           modified: file.lastModified ? new Date(file.lastModified).toISOString() : ""
         };
