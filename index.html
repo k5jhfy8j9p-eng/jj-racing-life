@@ -1499,7 +1499,8 @@
       }
 
       function isJuniorCategory(category) {
-        return /junior/i.test(category || "");
+        var value = String(category || "").toLocaleUpperCase("cs-CZ").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return value.trim() === "JUNIOR" || (value.includes("T4") && value.includes("JUNIOR"));
       }
 
       function scheduleIsValid(sessions) {
@@ -1743,6 +1744,48 @@
         });
       }
 
+      function normalizedPdfText(value) {
+        return String(value || "").toLocaleUpperCase("cs-CZ").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      }
+
+      function pdfClock(value) {
+        return String(value || "").replace(/\s+/g, "");
+      }
+
+      function scheduleEntriesFromLine(line) {
+        var source = String(line || "").replace(/\s*\|\s*([–—-])\s*\|\s*/g, " $1 ");
+        var rangePattern = /(\d{1,2}:\s*\d{2})\s*[–—-]\s*(\d{1,2}:\s*\d{2})/g;
+        var matches = [], match;
+        while ((match = rangePattern.exec(source)) !== null) {
+          matches.push({ start: pdfClock(match[1]), end: pdfClock(match[2]), index: match.index, after: rangePattern.lastIndex });
+        }
+
+        return matches.map(function (entry, index) {
+          var next = matches[index + 1];
+          var tail = source.slice(entry.after, next ? next.index : source.length)
+            .replace(/^\s*[|.]+\s*/, "")
+            .replace(/\.{2,}/g, "|")
+            .replace(/\s+/g, " ")
+            .trim();
+          var parts = tail.split(/\s*\|\s*/).map(function (part) {
+            return part.replace(/^[.\s]+|[.\s]+$/g, "").trim();
+          }).filter(Boolean);
+          var categoryParts = [], detailParts = [];
+          parts.forEach(function (part) {
+            var folded = normalizedPdfText(part);
+            if (/^(?:\d+\s*(?:KOL|MIN)|TRENINK\s*\d+)/.test(folded)) detailParts.push(part);
+            else if (detailParts.length) detailParts.push(part);
+            else categoryParts.push(part);
+          });
+          return {
+            start: entry.start,
+            end: entry.end,
+            category: categoryParts.join(" ").replace(/\s+/g, " ").trim(),
+            detail: detailParts.join(" · ").replace(/\s+/g, " ").trim()
+          };
+        });
+      }
+
       async function extractPdfLines(arrayBuffer) {
         var pdfjs = await getPdfLibrary();
         var loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
@@ -1765,15 +1808,20 @@
         var trackSectionStarted = false;
 
         lines.forEach(function (line) {
-          var upper = line.toLocaleUpperCase("cs-CZ");
+          var upper = normalizedPdfText(line);
 
-          if (upper.includes("VOLN") && upper.includes("TRÉN")) {
+          if ((upper.includes("VOLN") && upper.includes("TREN")) || /(?:^|\|)\s*\d+\.?\s*TREN(?:ING|INK)?\b/.test(upper)) {
             currentType = "Volný trénink";
             trackSectionStarted = true;
             return;
           }
-          if ((upper.includes("MĚŘ") || upper.includes("MEREN")) && upper.includes("TRÉN")) {
-            currentType = "Měřený trénink";
+          if (upper.includes("OFICIAL") && upper.includes("TREN")) {
+            currentType = "Oficiální trénink";
+            trackSectionStarted = true;
+            return;
+          }
+          if ((upper.includes("MERAN") || upper.includes("MEREN") || upper.includes("MER") || upper.includes("QUALIF")) && upper.includes("TREN")) {
+            currentType = "Kvalifikace";
             trackSectionStarted = true;
             return;
           }
@@ -1787,39 +1835,36 @@
             trackSectionStarted = true;
             return;
           }
-          if (/1\.?\s*ZÁVOD|ZÁVOD\s*1/.test(upper)) {
+          if (/1\.?\s*ZAVOD|ZAVOD\s*1|START\s+PRV|FIRST\s+RUN/.test(upper)) {
             currentType = "1. závod";
             trackSectionStarted = true;
             return;
           }
-          if (/2\.?\s*ZÁVOD|ZÁVOD\s*2/.test(upper)) {
+          if (/2\.?\s*ZAVOD|ZAVOD\s*2|START\s+DRUH|SECOND\s+RUN/.test(upper)) {
             currentType = "2. závod";
             trackSectionStarted = true;
             return;
           }
-          if (upper.includes("PREFINÁLE") || upper.includes("PŘEDFINÁLE")) {
+          if (upper.includes("PREFINALE") || upper.includes("PREDFINALE")) {
             currentType = "Předfinále";
             trackSectionStarted = true;
             return;
           }
-          if (upper.includes("FINÁLE")) {
+          if (upper.includes("FINALE")) {
             currentType = "Finále";
             trackSectionStarted = true;
             return;
           }
 
           if (!trackSectionStarted) return;
-          var match = line.match(/(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})\s*(?:\|\s*)?(.+)/);
-          if (!match) return;
+          scheduleEntriesFromLine(line).forEach(function (entry) {
+            var category = entry.category;
+            if (!category || /^(KATEGORIE|AKTIVITA|DELKA|POCET KOL)$/i.test(normalizedPdfText(category))) return;
 
-          var tail = match[3].replace(/^\|\s*/, "").trim();
-          var columns = tail.split(/\s*\|\s*/).filter(Boolean);
-          var category = (columns.shift() || "").trim();
-          if (!category || /^(KATEGORIE|AKTIVITA|DÉLKA|POČET KOL)$/i.test(category)) return;
-
-          var type = currentType || "Jízda";
-          if (/OBĚD|PAUZA/i.test(category)) type = "Pauza";
-          sessions.push(item(match[1], match[2], category, type, columns.join(" · ")));
+            var type = currentType || "Jízda";
+            if (/OBED|PAUZA|PRESTAV|LUNCH/i.test(normalizedPdfText(category))) type = "Pauza";
+            sessions.push(item(entry.start, entry.end, category, type, entry.detail));
+          });
         });
 
         var unique = [];
@@ -1831,6 +1876,14 @@
           unique.push(session);
         });
 
+        var trainingCounts = {};
+        unique.forEach(function (session) {
+          if (session.type !== "Volný trénink" || session.detail) return;
+          var categoryKey = normalizedPdfText(session.category);
+          trainingCounts[categoryKey] = (trainingCounts[categoryKey] || 0) + 1;
+          session.detail = "trénink " + trainingCounts[categoryKey];
+        });
+
         if (!scheduleIsValid(unique)) throw new Error("V PDF nebyl nalezen dostatečný počet jízd.");
         if (!unique.some(function (session) { return isJuniorCategory(session.category); })) {
           throw new Error("V PDF nebyla nalezena žádná kategorie Junior.");
@@ -1840,14 +1893,14 @@
 
       function parseSupportEvents(lines) {
         var events = [];
-        var keyword = /REGISTRAC|PŘEJÍMK|PREJIMK|PNEUMATIK|ROZPRAV|VYHLÁŠEN|VYHLASEN/i;
+        var keyword = /REGISTRAC|PRIHLASOV|PREBERAN|PREJIMK|PNEUMATIK|ROZPRAV|VYHLASEN|VYHODNOTEN/i;
 
         lines.forEach(function (line) {
           var range = line.match(/(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})\s*(?:\|\s*)?(.+)/);
           var single = line.match(/(\d{1,2}:\d{2})\s*(?:\||[–—-])\s*(.+)/);
           var title = range ? range[3].trim() : single ? single[2].trim() : "";
 
-          if ((range || single) && keyword.test(title)) {
+          if ((range || single) && keyword.test(normalizedPdfText(title))) {
             events.push({
               start: minutes(range ? range[1] : single[1]),
               end: range ? minutes(range[2]) : null,
@@ -1856,7 +1909,7 @@
             return;
           }
 
-          if (keyword.test(line) && events.length && !/\d{1,2}:\d{2}/.test(line)) {
+          if (keyword.test(normalizedPdfText(line)) && events.length && !/\d{1,2}:\d{2}/.test(line)) {
             var previous = events[events.length - 1];
             if (!previous.title.toLocaleUpperCase("cs-CZ").includes(line.toLocaleUpperCase("cs-CZ").trim())) {
               previous.title = (previous.title + " " + line.trim()).replace(/\s+/g, " ");
