@@ -107,6 +107,11 @@
     #karting-program-app .kp-pdf-status > div { padding: 11px; border-radius: 10px; background: var(--muted); }
     #karting-program-app .kp-pdf-status strong, #karting-program-app .kp-pdf-status span { display: block; }
     #karting-program-app .kp-pdf-status span { margin-top: 4px; color: var(--muted-foreground); }
+    #karting-program-app .kp-local-pdf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    #karting-program-app .kp-local-pdf-field { display: grid; gap: 7px; padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.025); font-weight: 750; }
+    #karting-program-app .kp-local-pdf-field input { width: 100%; min-width: 0; color: var(--muted-foreground); font-weight: 500; }
+    #karting-program-app .kp-local-pdf-message { min-height: 1.3em; color: var(--muted-foreground); font-size: .9rem; }
+    #karting-program-app .kp-local-pdf-message.is-error { color: #ffd5d7; }
     #karting-program-app .kp-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
     #karting-program-app .kp-dialog-actions a { text-decoration: none; }
     #karting-program-app .kp-manual-form { display: grid; gap: 12px; }
@@ -121,6 +126,7 @@
     #karting-program-app .kp-manual-help { margin: 0; color: var(--muted-foreground); font-size: .92rem; }
     #karting-program-app .kp-manual-message { min-height: 1.4em; color: #ffd5d7; }
     @media (max-width: 620px) {
+      #karting-program-app .kp-local-pdf-grid { grid-template-columns: 1fr; }
       #karting-program-app .kp-manual-columns { display: none; }
       #karting-program-app .kp-manual-row { grid-template-columns: 1fr 1fr 76px 42px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.025); }
       #karting-program-app .kp-manual-row .kp-manual-title { grid-column: 1 / -1; grid-row: 1; }
@@ -885,23 +891,22 @@
       <div class="kp-dialog-head">
         <div>
           <h2>Nový závodní víkend</h2>
-          <p class="kp-dialog-copy">Nahraj nové PDF do GitHubu. Aplikace je po zveřejnění sama přečte.</p>
+          <p class="kp-dialog-copy">Vyber páteční a sobotní PDF přímo z Macu. Aplikace je zkontroluje a uloží v tomto zařízení.</p>
         </div>
         <form method="dialog"><button class="btn btn-ghost" aria-label="Zavřít">Zavřít</button></form>
       </div>
-      <ol class="kp-pdf-steps">
-        <li>První nový víkend pojmenuj <strong>patek1.pdf</strong> a <strong>sobota1.pdf</strong>.</li>
-        <li>Další víkend zvyš číslo: <strong>patek2.pdf</strong> a <strong>sobota2.pdf</strong> atd.</li>
-        <li>Nahraj oba soubory a potvrď tlačítkem <strong>Commit changes</strong>.</li>
-        <li>Po zveřejnění stiskni <strong>Ověřit a načíst PDF</strong>. Aplikace vybere nejvyšší společné číslo.</li>
-      </ol>
+      <div class="kp-local-pdf-grid">
+        <label class="kp-local-pdf-field">Páteční PDF<input type="file" id="kp-local-friday" accept=".pdf,application/pdf"></label>
+        <label class="kp-local-pdf-field">Sobotní PDF<input type="file" id="kp-local-saturday" accept=".pdf,application/pdf"></label>
+      </div>
+      <div class="kp-local-pdf-message" id="kp-local-pdf-message">Vyber oba soubory a načti je jedním tlačítkem.</div>
       <div class="kp-pdf-status">
         <div><strong>Pátek</strong><span id="kp-pdf-friday">Používám výchozí rozpis</span></div>
         <div><strong>Sobota</strong><span id="kp-pdf-saturday">Používám výchozí rozpis</span></div>
       </div>
       <div class="kp-dialog-actions">
-        <a class="btn" href="https://github.com/k5jhfy8j9p-eng/jj-racing-life/upload/main" target="_blank" rel="noopener">Otevřít nahrávání PDF</a>
-        <button type="button" class="btn btn-primary" id="kp-reload-pdf">Ověřit a načíst PDF</button>
+        <button type="button" class="btn" id="kp-reload-pdf">Načíst zveřejněnou verzi</button>
+        <button type="button" class="btn btn-primary" id="kp-load-local-pdf">Načíst vybraná PDF</button>
       </div>
     </div>
   </dialog>
@@ -1321,6 +1326,10 @@
         usePdf: root.querySelector("#kp-use-pdf"),
         pdfDialog: root.querySelector("#kp-pdf-dialog"),
         reloadPdf: root.querySelector("#kp-reload-pdf"),
+        localFriday: root.querySelector("#kp-local-friday"),
+        localSaturday: root.querySelector("#kp-local-saturday"),
+        loadLocalPdf: root.querySelector("#kp-load-local-pdf"),
+        localPdfMessage: root.querySelector("#kp-local-pdf-message"),
         pdfFriday: root.querySelector("#kp-pdf-friday"),
         pdfSaturday: root.querySelector("#kp-pdf-saturday"),
         dataBadge: root.querySelector("#kp-data-badge"),
@@ -1963,6 +1972,77 @@
           fingerprint: fingerprint,
           fileName: fileName
         }));
+      }
+
+      async function parseLocalPdfFile(file) {
+        if (!file || !/\.pdf$/i.test(file.name || "")) throw new Error("Vyber platný PDF soubor.");
+        var buffer = await file.arrayBuffer();
+        var lines = await extractPdfLines(buffer);
+        return {
+          sessions: parseScheduleLines(lines),
+          supportEvents: parseSupportEvents(lines),
+          fingerprint: fingerprintPdf(buffer),
+          fileName: file.name,
+          modified: file.lastModified ? new Date(file.lastModified).toISOString() : ""
+        };
+      }
+
+      function activateLocalPdfDay(day, parsed, loadedAt) {
+        var previousFingerprint = scheduleMeta[day].fingerprint || "";
+        var changed = !previousFingerprint || previousFingerprint !== parsed.fingerprint;
+        var changeDetectedAt = changed ? loadedAt : (scheduleMeta[day].changeDetectedAt || "");
+        schedules[day] = parsed.sessions;
+        supportEvents[day] = parsed.supportEvents;
+        scheduleMeta[day] = {
+          source: "Aktuální PDF",
+          remote: true,
+          error: "",
+          modified: parsed.modified,
+          loadedAt: loadedAt,
+          changeDetectedAt: changeDetectedAt,
+          fingerprint: parsed.fingerprint,
+          fileName: parsed.fileName,
+          changed: changed
+        };
+        saveSetting("karting-pdf-schedule-" + day, JSON.stringify({
+          sessions: parsed.sessions,
+          supportEvents: parsed.supportEvents,
+          modified: parsed.modified,
+          loadedAt: loadedAt,
+          changeDetectedAt: changeDetectedAt,
+          fingerprint: parsed.fingerprint,
+          fileName: parsed.fileName
+        }));
+      }
+
+      async function loadLocalSchedules() {
+        var fridayFile = elements.localFriday.files && elements.localFriday.files[0];
+        var saturdayFile = elements.localSaturday.files && elements.localSaturday.files[0];
+        elements.localPdfMessage.classList.remove("is-error");
+        if (!fridayFile || !saturdayFile) {
+          elements.localPdfMessage.classList.add("is-error");
+          elements.localPdfMessage.textContent = "Vyber páteční i sobotní PDF.";
+          return;
+        }
+        elements.loadLocalPdf.disabled = true;
+        elements.loadLocalPdf.textContent = "Kontroluji PDF…";
+        try {
+          var parsed = await Promise.all([parseLocalPdfFile(fridayFile), parseLocalPdfFile(saturdayFile)]);
+          var loadedAt = new Date().toISOString();
+          activateLocalPdfDay("friday", parsed[0], loadedAt);
+          activateLocalPdfDay("saturday", parsed[1], loadedAt);
+          pdfCheckCompleted = true;
+          state.manual = false;
+          elements.localPdfMessage.textContent = "✓ Oba rozpisy jsou načtené a uložené v tomto zařízení.";
+          renderPdfStatus(false);
+          render();
+        } catch (error) {
+          elements.localPdfMessage.classList.add("is-error");
+          elements.localPdfMessage.textContent = error.message || "PDF se nepodařilo načíst.";
+        } finally {
+          elements.loadLocalPdf.disabled = false;
+          elements.loadLocalPdf.textContent = "Načíst vybraná PDF";
+        }
       }
 
       function fingerprintPdf(buffer) {
@@ -5008,6 +5088,7 @@
         if (typeof elements.pdfDialog.showModal === "function") elements.pdfDialog.showModal();
       });
       elements.reloadPdf.addEventListener("click", loadRemoteSchedules);
+      elements.loadLocalPdf.addEventListener("click", loadLocalSchedules);
 
       elements.manageAlfano.addEventListener("click", function () {
         if (typeof elements.alfanoDialog.showModal === "function") elements.alfanoDialog.showModal();
