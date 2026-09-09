@@ -1873,6 +1873,7 @@
           scheduleEntriesFromLine(line).forEach(function (entry) {
             var category = entry.category;
             if (!category || /^(KATEGORIE|AKTIVITA|DELKA|POCET KOL)$/i.test(normalizedPdfText(category))) return;
+            if (/ROZPRAV|BRIEFING/i.test(normalizedPdfText(category))) return;
 
             var type = currentType || "Jízda";
             if (/OBED|PAUZA|PRESTAV|LUNCH/i.test(normalizedPdfText(category))) type = "Pauza";
@@ -1906,9 +1907,18 @@
 
       function parseSupportEvents(lines) {
         var events = [];
-        var keyword = /REGISTRAC|PRIHLASOV|PREBERAN|PREJIMK|PNEUMATIK|ROZPRAV|VYHLASEN|VYHODNOTEN/i;
+        var keyword = /REGISTRAC|PRIHLASOV|PREBERAN|PREJIMK|PNEUMATIK|ROZPRAV|BRIEFING|VYHLASEN|VYHODNOTEN/i;
 
         lines.forEach(function (line) {
+          var rangedEvents = scheduleEntriesFromLine(line).filter(function (entry) {
+            return keyword.test(normalizedPdfText(entry.category));
+          });
+          if (rangedEvents.length) {
+            rangedEvents.forEach(function (entry) {
+              events.push({ start: minutes(entry.start), end: minutes(entry.end), title: entry.category });
+            });
+            return;
+          }
           var range = line.match(/(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})\s*(?:\|\s*)?(.+)/);
           var single = line.match(/(\d{1,2}:\d{2})\s*(?:\||[–—-])\s*(.+)/);
           var title = range ? range[3].trim() : single ? single[2].trim() : "";
