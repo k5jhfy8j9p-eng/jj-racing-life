@@ -1188,6 +1188,7 @@
       var alfanoSessions = [];
       var alfanoTrackRecords = {};
       var alfanoSectorProfiles = {};
+      var alfanoDataSanitized = false;
       var activeDataPilot = "JJ";
 
       function pilotKey(value) {
@@ -2314,6 +2315,7 @@
         });
         saveSetting("karting-alfano-sessions", JSON.stringify(summaries));
         await persistAlfanoSessions();
+        alfanoDataSanitized = false;
         return true;
       }
 
@@ -2326,6 +2328,7 @@
             await persistAlfanoSessions();
           }
           rebuildTelemetryAnalytics(alfanoSessions);
+          if (alfanoDataSanitized) await saveAlfanoSessions();
           renderAlfano();
         } catch (error) {
           elements.alfanoMessage.textContent = "Velké úložiště telemetrie není dostupné. Před dalším importem stáhni zálohu.";
@@ -2626,6 +2629,34 @@
         return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
       }
 
+      var knownInvalidAlfanoLaps = [
+        { driver: "JJ", track: "HRADISTE", date: "26-09-2026", time: "17:46", lap: 11, ms: 56690 }
+      ];
+
+      function alfanoLapIsKnownInvalid(session, lap) {
+        return knownInvalidAlfanoLaps.some(function (entry) {
+          return String(session.driver || "").trim().toLocaleUpperCase("cs-CZ") === entry.driver
+            && trackRecordKey(session.track) === entry.track
+            && String(session.date || "").trim() === entry.date
+            && String(session.time || "").trim() === entry.time
+            && Number(lap && lap.lap) === entry.lap
+            && Number(lap && lap.ms) === entry.ms;
+        });
+      }
+
+      function removeKnownInvalidAlfanoLaps(session) {
+        if (!session || !Array.isArray(session.laps)) return false;
+        var invalidNumbers = new Set(session.laps.filter(function (lap) {
+          return alfanoLapIsKnownInvalid(session, lap);
+        }).map(function (lap) { return Number(lap.lap); }));
+        if (!invalidNumbers.size) return false;
+        session.laps = session.laps.filter(function (lap) { return !invalidNumbers.has(Number(lap.lap)); });
+        if (Array.isArray(session.gpsLaps)) session.gpsLaps = session.gpsLaps.filter(function (lap) { return !invalidNumbers.has(Number(lap.lap)); });
+        if (Array.isArray(session.virtualSectors)) session.virtualSectors = session.virtualSectors.filter(function (sector) { return !invalidNumbers.has(Number(sector.lap)); });
+        alfanoDataSanitized = true;
+        return true;
+      }
+
       function plausibleTimedLaps(session) {
         var laps = (session && Array.isArray(session.laps) ? session.laps : []).filter(function (lap) {
           return Number.isFinite(lap.lap) && Number.isFinite(lap.ms) && lap.ms > 0;
@@ -2649,6 +2680,7 @@
 
       function normalizeAlfanoSession(session) {
         if (!session || !Array.isArray(session.laps)) return session;
+        removeKnownInvalidAlfanoLaps(session);
         var clean = analysisLaps(session);
         if (!clean.length) return session;
         var best = clean.reduce(function (current, lap) { return lap.ms < current.ms ? lap : current; }, clean[0]);
