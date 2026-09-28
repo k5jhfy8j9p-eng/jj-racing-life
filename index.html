@@ -2270,7 +2270,7 @@
         if (!saved) return;
         try {
           var parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) alfanoSessions = parsed.filter(alfanoSessionIsValid).map(normalizeAlfanoSession);
+          if (Array.isArray(parsed)) alfanoSessions = expandMixedTrackSessions(parsed.filter(alfanoSessionIsValid).map(normalizeAlfanoSession));
         } catch (error) { /* Poškozenou uloženou kopii ignorujeme. */ }
       }
 
@@ -2323,7 +2323,7 @@
         try {
           var stored = await loadAlfanoSessionsFromDatabase();
           if (Array.isArray(stored) && stored.length) {
-            alfanoSessions = stored.filter(alfanoSessionIsValid).map(normalizeAlfanoSession);
+            alfanoSessions = expandMixedTrackSessions(stored.filter(alfanoSessionIsValid).map(normalizeAlfanoSession));
           } else if (alfanoSessions.length) {
             await persistAlfanoSessions();
           }
@@ -2338,6 +2338,31 @@
 
       function trackRecordKey(track) {
         return String(track || "Trať").trim().toLocaleUpperCase("cs-CZ");
+      }
+
+      function sourceSessionIdentity(session) {
+        if (session && session._sourceSessionIdentity) return session._sourceSessionIdentity;
+        return [
+          pilotKey(session && session.driver),
+          trackRecordKey(session && session.track),
+          String(session && session.date || ""),
+          String(session && session.time || "")
+        ].join("|");
+      }
+
+      function physicalSessionCount(sessions) {
+        return new Set((sessions || []).map(sourceSessionIdentity)).size;
+      }
+
+      function physicalLapCount(sessions) {
+        var totals = new Map();
+        (sessions || []).forEach(function (session) {
+          var key = sourceSessionIdentity(session);
+          var total = Number(session && session._sourceLapCount);
+          if (!Number.isFinite(total)) total = session && Array.isArray(session.laps) ? session.laps.length : 0;
+          totals.set(key, Math.max(totals.get(key) || 0, total));
+        });
+        return Array.from(totals.values()).reduce(function (sum, value) { return sum + value; }, 0);
       }
 
       function trackMapBackground(track) {
@@ -2442,7 +2467,7 @@
           if (!backup || backup.format !== "jj-racing-backup" || backup.version !== 1 || !Array.isArray(backup.alfanoSessions)) {
             throw new Error("Soubor není platná záloha JJ Racing.");
           }
-          var sessions = backup.alfanoSessions.filter(alfanoSessionIsValid).map(normalizeAlfanoSession);
+          var sessions = expandMixedTrackSessions(backup.alfanoSessions.filter(alfanoSessionIsValid).map(normalizeAlfanoSession));
           var records = backup.alfanoTrackRecords && typeof backup.alfanoTrackRecords === "object" && !Array.isArray(backup.alfanoTrackRecords) ? backup.alfanoTrackRecords : {};
           var profiles = backup.alfanoSectorProfiles && typeof backup.alfanoSectorProfiles === "object" && !Array.isArray(backup.alfanoSectorProfiles) ? backup.alfanoSectorProfiles : {};
           var trackCount = Object.keys(records).length;
@@ -2567,7 +2592,7 @@
           item.innerHTML = "<span>" + record[0] + "</span><strong>" + record[1] + "</strong><small>" + record[2] + "</small>";
           elements.recordGrid.appendChild(item);
         });
-        elements.recordsHistory.textContent = "Celá historie: " + sorted.length + " tréninků · " + allLaps + " kol · " + new Set(sorted.map(trackConfigurationKey)).size + " konfigurací tratí";
+        elements.recordsHistory.textContent = "Celá historie: " + physicalSessionCount(sorted) + " tréninků · " + physicalLapCount(sorted) + " kol · " + new Set(sorted.map(trackConfigurationKey)).size + " konfigurací tratí";
       }
 
       function appendRecordItem(container, label, value, note) {
@@ -2705,7 +2730,7 @@
         return median(lengths);
       }
 
-      var trackShapeVersion = 4;
+      var trackShapeVersion = 5;
 
       function representativeGpsLap(session) {
         var candidates = (session && Array.isArray(session.gpsLaps) ? session.gpsLaps : []).filter(function (lap) {
@@ -2803,7 +2828,17 @@
         var visitGap = 4 * 24 * 60 * 60 * 1000;
         var visits = [];
         sessions.forEach(function (session) {
-          var previousVisit = visits[visits.length - 1];
+          if (session._trackVariantRole) {
+            var variantVisit = { sessions: [session], routes: [], route: null, variant: true };
+            var variantRoute = sampledTrackRoute(session, 64);
+            if (variantRoute) variantVisit.routes.push(variantRoute);
+            visits.push(variantVisit);
+            return;
+          }
+          var previousVisit = null;
+          for (var visitIndex = visits.length - 1; visitIndex >= 0; visitIndex -= 1) {
+            if (!visits[visitIndex].variant) { previousVisit = visits[visitIndex]; break; }
+          }
           var previousSession = previousVisit && previousVisit.sessions[previousVisit.sessions.length - 1];
           var timestamp = session.timestamp || 0;
           var previousTimestamp = previousSession && previousSession.timestamp || 0;
@@ -2825,6 +2860,7 @@
         var byBase = {};
         valid.forEach(function (session) {
           delete session._trackConfigurationKey;
+          delete session._trackConfigurationLabel;
           session._trackShapeVersion = trackShapeVersion;
           var base = pilotKey(session.driver) + "|" + trackRecordKey(session.track);
           if (!byBase[base]) byBase[base] = [];
@@ -2854,9 +2890,22 @@
             cluster.visits.push(visit);
           });
 
+          if (clusters.length === 2) {
+            var clusterLengths = clusters.map(function (cluster) { return cluster.reference && cluster.reference.length; });
+            var shortest = Math.min.apply(null, clusterLengths), longest = Math.max.apply(null, clusterLengths);
+            if (Number.isFinite(shortest) && Number.isFinite(longest) && shortest < longest * .88) {
+              clusters.forEach(function (cluster) {
+                cluster.label = cluster.reference.length === longest ? "dlouhá" : "krátká";
+              });
+            }
+          }
+
           clusters.forEach(function (cluster, index) {
             cluster.visits.forEach(function (visit) {
-              visit.sessions.forEach(function (session) { session._trackConfigurationKey = base + "|GPS" + (index + 1); });
+              visit.sessions.forEach(function (session) {
+                session._trackConfigurationKey = base + "|GPS" + (index + 1);
+                session._trackConfigurationLabel = cluster.label || "konfigurace " + (index + 1);
+              });
             });
           });
           withoutRoute.forEach(function (visit) {
@@ -2883,6 +2932,7 @@
           return pilotKey(candidate && candidate.driver) === pilotKey(session && session.driver) && trackRecordKey(candidate && candidate.track) === base;
         }).map(trackConfigurationKey));
         if (configurations.size <= 1) return "";
+        if (session && session._trackConfigurationLabel) return " · " + session._trackConfigurationLabel;
         var match = /\|GPS(\d+)$/.exec(key);
         return match ? " · konfigurace " + match[1] : " · konfigurace neurčena";
       }
@@ -2948,7 +2998,8 @@
           byTrack[key].laps += session.laps.length;
           (session.gpsLaps || []).forEach(function (lap) { if (Array.isArray(lap.points)) gpsMeters += gpsPathDistance(lap.points); });
         });
-        var totalLaps = sorted.reduce(function (sum, session) { return sum + session.laps.length; }, 0);
+        var totalLaps = physicalLapCount(sorted);
+        var trainingCount = physicalSessionCount(sorted);
         var longest = sorted.slice().sort(function (a, b) { return b.laps.length - a.laps.length; })[0];
         var trackValues = Object.keys(byTrack).map(function (key) { return byTrack[key]; }).sort(function (a, b) { return b.laps - a.laps; });
         var venueNames = [];
@@ -2960,11 +3011,11 @@
           venueNames.push(session.track);
         });
         elements.mileageCopy.textContent = "Souhrn všech uložených tréninků jezdce";
-        appendRecordItem(elements.mileageGrid, "Celkem kol", String(totalLaps), sorted.length + " tréninků");
+        appendRecordItem(elements.mileageGrid, "Celkem kol", String(totalLaps), trainingCount + " tréninků");
         appendRecordItem(elements.mileageGrid, "Počet tratí", String(venueNames.length), venueNames.join(" · "));
         appendRecordItem(elements.mileageGrid, "Konfigurace tratí", String(trackValues.length), "samostatně vyhodnocované varianty");
         appendRecordItem(elements.mileageGrid, "Nejdelší trénink", longest.laps.length + " kol", longest.track + " · " + longest.time);
-        appendRecordItem(elements.mileageGrid, "Průměr kol na trénink", (totalLaps / sorted.length).toFixed(1).replace(".", ","), "ze všech uložených jízd");
+        appendRecordItem(elements.mileageGrid, "Průměr kol na trénink", (totalLaps / trainingCount).toFixed(1).replace(".", ","), "ze všech uložených jízd");
         appendRecordItem(elements.mileageGrid, "Orientační vzdálenost", gpsMeters ? (gpsMeters / 1000).toFixed(1).replace(".", ",") + " km" : "—", "součet kol s dostupnou GPS");
         var maximum = Math.max.apply(null, trackValues.map(function (track) { return track.laps; }));
         trackValues.forEach(function (track) {
@@ -3872,6 +3923,49 @@
         return Math.sqrt(x * x + y * y);
       }
 
+      function splitMixedTrackSession(session) {
+        if (!session || session._trackVariantRole || !Array.isArray(session.laps) || !Array.isArray(session.gpsLaps)) return [session];
+        var timed = session.laps.filter(function (lap) { return Number.isFinite(lap.lap) && Number.isFinite(lap.ms); });
+        var routes = session.gpsLaps.map(function (gpsLap) {
+          return { lap: Number(gpsLap.lap), length: gpsPathDistance(gpsLap.points || []), gpsLap: gpsLap };
+        }).filter(function (item) { return Number.isFinite(item.length) && item.length > 100; });
+        var routeByLap = new Map(routes.map(function (item) { return [item.lap, item]; }));
+        if (timed.length < 4 || timed.some(function (lap) { return !routeByLap.has(Number(lap.lap)); })) return [session];
+
+        var ordered = routes.slice().sort(function (a, b) { return a.length - b.length; });
+        var splitIndex = -1, largestGap = 0;
+        for (var index = 1; index < ordered.length; index += 1) {
+          var gap = (ordered[index].length - ordered[index - 1].length) / ordered[index].length;
+          if (gap > largestGap) { largestGap = gap; splitIndex = index; }
+        }
+        if (largestGap < .12 || splitIndex < 2 || ordered.length - splitIndex < 2) return [session];
+
+        var threshold = (ordered[splitIndex - 1].length + ordered[splitIndex].length) / 2;
+        var groups = [
+          routes.filter(function (item) { return item.length < threshold; }),
+          routes.filter(function (item) { return item.length >= threshold; })
+        ];
+        alfanoDataSanitized = true;
+        var sourceIdentity = sourceSessionIdentity(session);
+        var sourceLapTotal = session.laps.length;
+        return groups.map(function (group, groupIndex) {
+          var lapNumbers = new Set(group.map(function (item) { return item.lap; }));
+          var variant = Object.assign({}, session);
+          variant.laps = session.laps.filter(function (lap) { return lapNumbers.has(Number(lap.lap)); });
+          variant.gpsLaps = session.gpsLaps.filter(function (lap) { return lapNumbers.has(Number(lap.lap)); });
+          variant.virtualSectors = [];
+          variant._sourceSessionIdentity = sourceIdentity;
+          variant._sourceLapCount = sourceLapTotal;
+          variant._trackVariantRole = groupIndex === groups.length - 1 ? "long" : "short";
+          variant._trackVariantMedianLength = Math.round(median(group.map(function (item) { return item.length; })));
+          return normalizeAlfanoSession(variant);
+        });
+      }
+
+      function expandMixedTrackSessions(sessions) {
+        return (sessions || []).flatMap(splitMixedTrackSession);
+      }
+
       function gpsGateAtFraction(points, fraction) {
         var distances = [0];
         for (var i = 1; i < points.length; i += 1) distances.push(distances[i - 1] + gpsDistance(points[i - 1], points[i]));
@@ -4687,6 +4781,24 @@
         return weekend;
       }
 
+      function currentRaceWeekendTrackSessions(sortedSessions) {
+        if (!sortedSessions.length) return [];
+        var latest = sortedSessions[sortedSessions.length - 1];
+        var base = pilotKey(latest.driver) + "|" + trackRecordKey(latest.track);
+        var sameTrack = sortedSessions.filter(function (session) {
+          return pilotKey(session.driver) + "|" + trackRecordKey(session.track) === base;
+        });
+        var weekend = [sameTrack[sameTrack.length - 1]];
+        var cursor = sameTrack[sameTrack.length - 1].timestamp || 0;
+        for (var index = sameTrack.length - 2; index >= 0; index -= 1) {
+          var timestamp = sameTrack[index].timestamp || 0;
+          if (!timestamp || !cursor || cursor - timestamp > 4 * 24 * 60 * 60 * 1000) break;
+          weekend.unshift(sameTrack[index]);
+          cursor = timestamp;
+        }
+        return weekend;
+      }
+
       function renderPilotDashboard(key, ui) {
         var sorted = pilotSessions(key).slice().sort(function (a, b) {
           return (a.timestamp || 0) - (b.timestamp || 0) || a.fileName.localeCompare(b.fileName);
@@ -4704,14 +4816,16 @@
         }
 
         var weekendSessions = currentRaceWeekendSessions(sorted);
+        var weekendTrackSessions = currentRaceWeekendTrackSessions(sorted);
         var latest = weekendSessions[weekendSessions.length - 1];
-        var totalLaps = weekendSessions.reduce(function (total, session) { return total + session.laps.length; }, 0);
+        var totalLaps = physicalLapCount(weekendTrackSessions);
+        var trainingCount = physicalSessionCount(weekendTrackSessions);
         var record = alfanoTrackRecords[trackConfigurationKey(latest)] || { bestMs: latest.bestMs, bestLap: latest.bestLap, track: latest.track };
         var sectorProfile = alfanoSectorProfiles[trackConfigurationKey(latest)];
         var latestDelta = latest.bestMs - record.bestMs;
         var consistency = calculateConsistency(latest);
 
-        ui.summary.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink víkendu" : weekendSessions.length < 5 ? " tréninky víkendu" : " tréninků víkendu") + " · " + trackConfigurationName(latest) + " · poslední " + latest.time;
+        ui.summary.textContent = trainingCount + (trainingCount === 1 ? " trénink víkendu" : trainingCount < 5 ? " tréninky víkendu" : " tréninků víkendu") + " · " + trackConfigurationName(latest) + " · poslední " + latest.time;
         ui.best.textContent = formatLapTime(record.bestMs);
         ui.bestNote.textContent = trackConfigurationName(latest) + (record.bestLap ? " · kolo " + record.bestLap : "");
         ui.latest.textContent = formatLapTime(latest.bestMs);
@@ -4721,7 +4835,7 @@
         ui.ideal.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? formatLapTime(sectorProfile.theoreticalMs) : "—";
         ui.idealNote.textContent = sectorProfile && Number.isFinite(sectorProfile.theoreticalMs) ? "−" + formatLapTime(Math.max(0, record.bestMs - sectorProfile.theoreticalMs)) + " s potenciál · GPS" : "nahraj telemetrii znovu pro GPS";
         ui.totalLaps.textContent = String(totalLaps);
-        ui.totalLapsNote.textContent = weekendSessions.length + (weekendSessions.length === 1 ? " trénink tohoto víkendu" : weekendSessions.length < 5 ? " tréninky tohoto víkendu" : " tréninků tohoto víkendu");
+        ui.totalLapsNote.textContent = trainingCount + (trainingCount === 1 ? " trénink tohoto víkendu" : trainingCount < 5 ? " tréninky tohoto víkendu" : " tréninků tohoto víkendu");
         renderAlfanoChart(weekendSessions, ui);
       }
 
@@ -4762,9 +4876,10 @@
           function sessionIdentity(session) {
             return [trackRecordKey(session.track), session.date || "", session.time || "", String(session.driver || "JJ").toLocaleUpperCase("cs-CZ")].join("|");
           }
-          var bySession = new Map(alfanoSessions.map(function (session) { return [sessionIdentity(session), session]; }));
-          imported.forEach(function (session) { bySession.set(sessionIdentity(session), session); });
-          alfanoSessions = Array.from(bySession.values());
+          var importedIdentities = new Set(imported.map(sessionIdentity));
+          alfanoSessions = expandMixedTrackSessions(alfanoSessions.filter(function (session) {
+            return !importedIdentities.has(sessionIdentity(session));
+          }).concat(imported));
           rebuildTelemetryAnalytics(alfanoSessions);
           await saveAlfanoSessions();
           renderAlfano();
