@@ -83,6 +83,8 @@ const latestFriday = await verify("patek5.pdf", 49, [502, 590, 678, 824, 912, 10
 const latestSaturday = await verify("sobota5.pdf", 41, [490, 572, 666, 807, 937]);
 const hradisteFriday = await verify("patek6.pdf", 28, [520, 600, 680, 760, 840, 920, 990]);
 const hradisteSaturday = await verify("sobota6.pdf", 22, [520, 600, 690, 785, 865]);
+const octoberFriday = await verify("patek7.pdf", 29, [555, 615, 675, 735, 825, 885, 945]);
+const octoberSaturday = await verify("sobota7.pdf", 21, [555, 615, 675, 800, 880]);
 await verify("patek3.pdf", 29, [555, 615, 675, 735, 825, 885, 945]);
 await verify("sobota3.pdf", 21, [555, 615, 675, 800, 880]);
 
@@ -100,6 +102,13 @@ assert.ok(latestSaturday.supportEvents.some((event) => event.start === 735 && ev
 assert.deepEqual(Array.from(hradisteSaturday.team, (session) => session.type), [
   "Volný trénink", "Volný trénink", "Kvalifikace", "1. závod", "2. závod"
 ]);
+assert.deepEqual(Array.from(octoberSaturday.team, (session) => session.type), [
+  "Volný trénink", "Volný trénink", "Kvalifikace", "1. závod", "2. závod"
+]);
+assert.equal(octoberFriday.sessions.find((session) => session.start === 750)?.type, "Pauza");
+assert.equal(octoberSaturday.sessions.find((session) => session.start === 720)?.type, "Pauza");
+assert.ok(octoberFriday.supportEvents.some((event) => event.start === 480 && event.end === 600 && /REGISTRACE/i.test(event.title)));
+assert.ok(octoberSaturday.supportEvents.some((event) => event.start === 480 && event.end === 510 && /ROZPRAVA/i.test(event.title)));
 assert.equal(hradisteSaturday.sessions.find((session) => session.start === 635)?.type, "Pauza");
 assert.equal(hradisteSaturday.sessions.find((session) => session.start === 715)?.type, "Pauza");
 assert.deepEqual(Array.from(hradisteFriday.supportEvents, (event) => [event.start, event.end, event.title]), [
